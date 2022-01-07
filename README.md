@@ -13,6 +13,7 @@ Models are initialised as dictionaries containing all of the necessary informati
 >/br>
 Several example model dictionaries are included to give an illustration of how the object should be created. As an example, I used the Legendre et al.,(1998) model for Glycine receptors in Zebrafish hindbrain, as cited by Harveit and Veruki, 2006.
 """
+'''
 def GlyLeg98Q(gly_conc = 5*10**-3):
     [0] Unbound, closed State
     [1] closed, 1 Glycine molecule bound
@@ -57,6 +58,7 @@ def GlyLeg98Q(gly_conc = 5*10**-3):
     Q['Q'][~np.isfinite(Q['Q'])]=0
     return(Q)
 """
+'''
 So first, run the line
 """
 Q = GlyLeg98Q(gly_conc = 5*10**-3)
