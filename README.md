@@ -12,7 +12,7 @@ The additional purposes of the software are to serve functions for simulation ro
 Models are initialised as dictionaries containing all of the necessary information to perform simulation stored as keys. This includes: a transition matrix, a Q matrix (which necessarily adopts the standard convention for diagonals), key:value pairs of initial states, key: value pairs of conducitng states and their conductances, and key:value pairs of transition rates which are concentration-dependent, and the concentration for the rates in that Q matrix.**It is recommended that functions are used to construct the dictionaries**.
 >/br>
 Several example model dictionaries are included to give an illustration of how the object should be created. As an example, I used the Legendre et al.,(1998) model for Glycine receptors in Zebrafish hindbrain, as cited by Harveit and Veruki, 2006.
-'''
+"""
 def GlyLeg98Q(gly_conc = 5*10**-3):
     [0] Unbound, closed State
     [1] closed, 1 Glycine molecule bound
@@ -56,7 +56,7 @@ def GlyLeg98Q(gly_conc = 5*10**-3):
     Q.update({'Q':q})
     Q['Q'][~np.isfinite(Q['Q'])]=0
     return(Q)
-'''
+"""
 So first, run the line
 """
 Q = GlyLeg98Q(gly_conc = 5*10**-3)
