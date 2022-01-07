@@ -12,9 +12,8 @@ The additional purposes of the software are to serve functions for simulation ro
 Models are initialised as dictionaries containing all of the necessary information to perform simulation stored as keys. This includes: a transition matrix, a Q matrix (which necessarily adopts the standard convention for diagonals), key:value pairs of initial states, key: value pairs of conducitng states and their conductances, and key:value pairs of transition rates which are concentration-dependent, and the concentration for the rates in that Q matrix.**It is recommended that functions are used to construct the dictionaries**.
 >/br>
 Several example model dictionaries are included to give an illustration of how the object should be created. As an example
-'''
+"""
 def GlyLeg98Q(gly_conc = 5*10**-3):
-    """
     Legendre (1998) Model for Glycine receptors in Zebrafish hindbrain, as cited by
     Harveit and Veruki, 2006
     
@@ -62,9 +61,9 @@ def GlyLeg98Q(gly_conc = 5*10**-3):
     Q.update({'Q':q})
     Q['Q'][~np.isfinite(Q['Q'])]=0
     return(Q)
-'''
+"""
 So first, run the line
-'''
+"""
 Q = GlyLeg98Q(gly_conc = 5*10**-3)
-'''
-tr is a k x k matrix, where k is the number of states in the model. tr[i,j] contains the rate for a transition from state i to j and is stored as Q['rates'].This is used for stochastic simulations. As we see, some of these rates are concentration-dependent. As such, the conc-dep key (accessed via Q['conc-dep']) tells us which rates are concentration-dependent (key = state i, value = state j). Some states - the open states - are associated with a conductance. These are detailed in the keys of Q['conducting states'], where values are their associated conductance in pS. Here both conducting states have the same conductance (50pS). If we access Q['conc'], we see that it is 5mM (or 5x10**-3M). This value is used for relaxations, and is used to scale to rates as appropriate during agonist applications. Q['initial states'] contains a list of initial states - i.e. states occupied at the simulation start time. The keys are state indexes (state i), and the values are occupancy probability. It is more efficient if this contains states only with a probability >0, but it can in theory also contain states with probabiltiy 0 (i.e. it could be a list of all states). Finally, Q['Q'] is the same as Q['rates'], but follows convention for diagnoal entries, which is necessary for the Q matrix approaches.
+"""
+tr is a k x k matrix, where k is the number of states in the model. tr[i,j] contains the rate for a transition from state i to j per second and is stored as Q['rates'].This is used for stochastic simulations. As we see, some of these rates are concentration-dependent. As such, the conc-dep key (accessed via Q['conc-dep']) tells us which rates are concentration-dependent (key = state i, value = state j). Some states - the open states - are associated with a conductance. These are detailed in the keys of Q['conducting states'], where values are their associated conductance in pS. Here both conducting states have the same conductance (50pS). If we access Q['conc'], we see that it is 5mM (or 5x10**-3M). This value is used for relaxations, and is used to scale to rates as appropriate during agonist applications. Q['initial states'] contains a list of initial states - i.e. states occupied at the simulation start time. The keys are state indexes (state i), and the values are occupancy probability. It is more efficient if this contains states only with a probability >0, but it can in theory also contain states with probabiltiy 0 (i.e. it could be a list of all states). Finally, Q['Q'] is the same as Q['rates'], but follows convention for diagnoal entries, which is necessary for the Q matrix approaches.
