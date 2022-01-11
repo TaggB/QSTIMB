@@ -83,6 +83,12 @@ from scipy.interpolate import interp1d
 import copy
 import networkx as nx
 
+# config
+import matplotlib.colors as mcolors
+from cycler import cycler
+colors = dict(mcolors.BASE_COLORS, **mcolors.CSS4_COLORS)
+colorlist = ['black','dimgrey','teal','darkturquoise', 'midnightblue','lightskyblue','steelblue','royalblue','lightsteelblue','darkorange', 'orange','darkgoldenrod','goldenrod','gold','khaki','yellow']
+mycycle = cycler(color=[colors[item] for item in colorlist])
 # =============================================================================
 # In-built Models for testing: Q (transition matrix) construction and modification
 # =============================================================================
@@ -466,12 +472,6 @@ def GluMom03(glu_conc = 5*10**-3):
 def GluRH03(glu_conc = 5*10**-3):
     """Robert and Howe (2003) Model for AMPARs, as cited by Harveit and Veruki, 2006
     
-    This model was created by fitting relaxations, and does not seem to perform
-    well in Q agonist applications because the chain is ergodic before agonist is
-    applied.
-    
-    But is fine for stochastic simulations
-    
     [0] Open state: subconductance level 1
     [1] Open state: subconductance level 2
     [2] Open state: subconductance level 3
@@ -555,12 +555,8 @@ def GluCoo17(glu_conc = 10*10**-3):
     """
     Coombs et al., 2017 model for GluA1 homomers saturated with TARP gamma-2
     
-    This model was created by fitting relaxations, and does not seem to perform
-    well in Q agonist applications because the chain is ergodic before agonist is
-    applied, but is fine for stochastic simualtions.
-    
     Also note that entry to desensitisation and recovery from desensitisation 
-    are occupacny-depende, whereas in this model, entry to is concentration-dependent
+    are occupancy-depende, whereas in this model, entry to is concentration-dependent
     (not occupancy-dependent), and recovery is dimensionless.
     
     [0] Open state: subconductance level 1
@@ -664,6 +660,8 @@ def Gillespie_walk(Q,t_final):
     Takes Q dict of type generated for in-built models for testing 
     
     that contains information about initial states, conducting states, transition rates, transition propensities etc
+    
+    Performs Gillespie walk for N = 1 receptor. Very slow with multiple states
     """
     # initialise at  t=0
     print("Warning! This is very slow.")
@@ -705,7 +703,6 @@ def Gillespie_walk(Q,t_final):
 # =============================================================================
 # Poisson-based Tau leaping
 # =============================================================================
-
 def Tau_leap_Gillespie(N,Q,t_final,interval = 5e-05,voltage=0,Vrev = 0,iterations = 100,plot=True):
     """
     
@@ -770,9 +767,9 @@ def Tau_leap_Gillespie(N,Q,t_final,interval = 5e-05,voltage=0,Vrev = 0,iteration
                     compar_accumulator[stateto] = np.random.poisson(((Rates[statefrom,stateto])*N*interval)) # lambda = R*t
                     
                     # because can generate negative or excessive populations of receptors,
-                    # rescale draws such tht sum(draws) = N
+                    # rescale draws such that sum(draws) = N
                     # and round to nearest integer -- make sure still not generating excess
-                compar_accumulator = np.floor((np.clip(compar_accumulator,0,N)/np.sum(np.clip(compar_accumulator,0,N)))*N)
+                compar_accumulator = np.floor(np.divide((np.clip(compar_accumulator,0,N)),(np.sum(np.clip(compar_accumulator,0,N))),where = compar_accumulator>0)*N)
                 transitions[statefrom,:] = compar_accumulator
                 
                 
@@ -785,21 +782,38 @@ def Tau_leap_Gillespie(N,Q,t_final,interval = 5e-05,voltage=0,Vrev = 0,iteration
             occupancy[:,intervalcount+1] = newstates
         iteration_occupancy[:,:,iteration] = occupancy
         
-    # get mena occupancy
+    # get mean occupancy
     mean_occ = np.mean(iteration_occupancy,2)
     occupancy = mean_occ
-            
+    p_t = np.divide(occupancy,np.max(np.nansum(occupancy,0)),where=occupancy>0)
+
     if 'conducting states' in Q.keys():
         conducting_occupancies = np.zeros([len(Q['conducting states'].keys()),np.size(occupancy,1)])
         for item, value in enumerate(Q['conducting states'].keys()): # multiply conductance of each state by occupancy and drivign force
             conducting_occupancies[item,:] = occupancy[value,:]*(((voltage-Vrev) *10**-3)*Q['conducting states'][value])
-        currents = np.sum(conducting_occupancies,0)
-        if plot:
-            plt.plot(t,currents*10**12)
-        return(mean_occ,currents*10**12)
-        
+        currents = np.nansum(conducting_occupancies,0)
+        currents[np.isnan(currents)] = 0
+        p_t[np.isnan(p_t)]=0 # as above
+        if plot:   
+                plt.style.use('ggplot')
+                figure,axes = plt.subplots(2,1)
+                axes[0].plot(t,currents*10**12,color='black') # plot current
+                axes[0].set_title("Simulated Current, N = {}, agonist pulse conc = {} M".format(N,Q['conc']))
+                axes[0].set_xlabel("t (s)")
+                axes[0].set_ylabel("pA")
+                # plotting occupancy probabilities over time
+                axes[1].set_prop_cycle(mycycle)
+                for state in np.arange(np.size(p_t[:,0],axis=0)):
+                    axes[1].plot(t,p_t[state,:],label="{}".format(state))
+                axes[1].legend(fontsize=5,loc= 6,bbox_to_anchor=(1.0,0.5))
+                axes[1].set_title("P(State Occupancy at t), {}kHZ".format((1/interval)/1000))
+                axes[1].set_xlabel("t (s)")
+                axes[1].set_ylabel("Probability")
+                plt.tight_layout()
+        return(p_t,occupancy,currents*10**12)
+
     else:
-        return(mean_occ)   
+        return(p_t,occupancy)
 
 def agonist_application_tau_leap_Gillespie(N,Q,t_final,agonist_time,agonist_duration,first_conc,second_conc,interval = 5e-05,voltage=0,Vrev = 0,iterations = 100,plot=True,rise_time = 250*10**-6,decay_time = 300*10**-6):
     """
@@ -883,7 +897,7 @@ def agonist_application_tau_leap_Gillespie(N,Q,t_final,agonist_time,agonist_dura
                     # because can generate negative or excessive populations of receptors,
                     # rescale draws such tht sum(draws) = N
                     # and round to nearest integer -- make sure still not generating excess
-                compar_accumulator = np.floor((np.clip(compar_accumulator,0,N)/np.sum(np.clip(compar_accumulator,0,N)))*N)
+                compar_accumulator = np.floor(np.divide((np.clip(compar_accumulator,0,N)),(np.sum(np.clip(compar_accumulator,0,N))),where = compar_accumulator>0)*N)
                 transitions[statefrom,:] = compar_accumulator
                 
             # subtract transitions to sum(row) from prevstates elementwise
@@ -895,33 +909,59 @@ def agonist_application_tau_leap_Gillespie(N,Q,t_final,agonist_time,agonist_dura
             occupancy[:,intervalcount+1] = newstates
         # for remaining time, perform a relaxation in the first conc
         # set initial states for the relaxation.
-        S.update({'initial states':{}})
-        for key, value in enumerate(occupancy[:,-1]/np.nansum(occupancy[:,-1])):
-            S['initial states'].update({key:value})        
-        remaining_occs,_ = Tau_leap_Gillespie(N = n, Q = S,t_final = t_final-t[-1]-interval,interval = interval,voltage=voltage,Vrev = Vrev,iterations = 1,plot=False)
-        iteration_occupancy[:,:,iteration] = np.hstack((occupancy,remaining_occs))
+        if t[-1]<t_final -(agonist_time-(agonist_time-rise_time-decay_time-(0.5*agonist_duration))): # efficiency: correct for pulse translation before decide if needed
+            S.update({'initial states':{}})
+            for key, value in enumerate(occupancy[:,-1]/np.nansum(occupancy[:,-1])):
+                if value >0:
+                    S['initial states'].update({key:value})  
+            S.update({'conc':first_conc})
+            _,remaining_occs,_ = Tau_leap_Gillespie(N = n, Q = S,t_final = t_final-t[-1]-interval,interval = interval,voltage=voltage,Vrev = Vrev,iterations = 1,plot=False)
+            iteration_occupancy[:,:,iteration] = np.hstack((occupancy,remaining_occs))
+        else:
+            iteration_occupancy[:,:,iteration] = occupancy[:,:np.size(iteration_occupancy,1)] # catch for single sample overspill
         
     # get mean occupancy for iterations
     mean_occ = np.mean(iteration_occupancy,2)
     
     # adjust Tnew so that pulse is translated to correct loc
-    t = np.concatenate((np.array([0]),t[:-1]+agonist_time-(agonist_time-rise_time-decay_time-(0.5*agonist_duration))))
     # add in time remaining from relaxation
-    Tnew= np.arange(0,t_final,interval)
+    Tnew = np.arange(0,t_final,interval)
+    Tnew = np.concatenate((np.array([0]),Tnew[:-1]+agonist_time-(agonist_time-rise_time-decay_time-(0.5*agonist_duration))))
     occupancy = mean_occ # lazy catch for below
-            
+    
+    # clip Tnew, occupancy to t_final & get p_t:
+    if Tnew[-1]>t_final:
+        occupancy = occupancy[:,:np.min(np.where(Tnew>t_final))]
+        Tnew = Tnew[:np.min(np.where(Tnew>t_final))]
+        p_t = np.divide(occupancy,np.max(np.nansum(occupancy,0)),where=occupancy>0)
+
     if 'conducting states' in Q.keys():
         conducting_occupancies = np.zeros([len(Q['conducting states'].keys()),np.size(occupancy,1)])
         for item, value in enumerate(Q['conducting states'].keys()): # multiply conductance of each state by occupancy and drivign force
             conducting_occupancies[item,:] = occupancy[value,:]*(((voltage-Vrev) *10**-3)*Q['conducting states'][value])
-        currents = np.sum(conducting_occupancies,0)
-        if plot:
-            plt.plot(Tnew,currents*10**12)
-        return(mean_occ,currents*10**12)
-        
-    else:
-        return(mean_occ)   
+        currents = np.nansum(conducting_occupancies,0)
+        currents[np.isnan(currents)] = 0
+        p_t[np.isnan(p_t)]=0 # as above
+        if plot:   
+                plt.style.use('ggplot')
+                figure,axes = plt.subplots(2,1)
+                axes[0].plot(Tnew,currents*10**12,color='black') # plot current
+                axes[0].set_title("Simulated Current, N = {}, agonist pulse conc = {} M".format(N,Q['conc']))
+                axes[0].set_xlabel("t (s)")
+                axes[0].set_ylabel("pA")
+                # plotting occupancy probabilities over time
+                axes[1].set_prop_cycle(mycycle)
+                for state in np.arange(np.size(p_t[:,0],axis=0)):
+                    axes[1].plot(Tnew,p_t[state,:],label="{}".format(state))
+                axes[1].legend(fontsize=5,loc= 6,bbox_to_anchor=(1.0,0.5))
+                axes[1].set_title("P(State Occupancy at t), {}kHZ".format((1/interval)/1000))
+                axes[1].set_xlabel("t (s)")
+                axes[1].set_ylabel("Probability")
+                plt.tight_layout()
+        return(p_t,occupancy,currents*10**12)
 
+    else:
+        return(p_t,occupancy)
 # =============================================================================
 # Adaptive Tau leaping Gillespie routines
 # =============================================================================
@@ -949,18 +989,18 @@ def Weighted_adaptive_Tau_leap(N,Q,t_final,sampling = 5e-05,voltage=0,Vrev = 0,i
     This method means that runtime does not increase drastically with sampling rate.
     Models with large number of states will run slower, and each additional concentration-dependent transition increases the number of operations
     so for models with large numbers of concentration-dependent rates, using fixed Tau leaping
-    is recommended
+    is recommended. Similarly, the length of simulation, t_final, will also impact performance for
+    complex models.
     """
     # number of excepted occrs = 
     # draw poisson as np.random.poisson(propensities*interval)    
             
     # pre-allocate to store occupancy 
     Rates = np.copy(Q['rates'])
-    Taus = 1/Rates # pseudo time constants
+    Taus = np.divide(1,Rates,where= Rates>0)# pseudo time constants
     Rates[~np.isfinite(Rates)]=0
     Taus[~np.isfinite(Taus)]=np.nan
     
-
     #take initial states for N with probability given in Q['intial states']
     initial_states = [int(i) for i in Q['initial states'].keys()]
     initial_probabilities = [int(i)*N for i in Q['initial states'].values()]
@@ -992,11 +1032,8 @@ def Weighted_adaptive_Tau_leap(N,Q,t_final,sampling = 5e-05,voltage=0,Vrev = 0,i
                 else:
                     prevstates = occupancy[-1,:]
                 
-                # get timestep size from weighted rates
-                # by time constant
-                #Tw = (aTau^a +bTau^b...nTau^n)/a+b+...n
-                # 1/~Tw = interval weighted, equivalent of which is below for rates
-                #interval step depends on reactions leaving state i
+                # get timestep size from weighted rates by pseudo time constantweighted interval w = (aTau^a +bTau^b...nTau^n)/a+b+...n
+                # 1/~Tw = interval weighted, equivalent of which is below for rates: interval step depends on reactions leaving state i
                 frcprev = prevstates/np.sum(prevstates) # fraction of N in each state
                 dt = Taus*frcprev
                 dt = np.nanmin(dt[dt>0])
@@ -1009,15 +1046,14 @@ def Weighted_adaptive_Tau_leap(N,Q,t_final,sampling = 5e-05,voltage=0,Vrev = 0,i
                         # because can generate negative or excessive populations of receptors,
                         # rescale draws such tht sum(draws) = N
                         # and round to nearest integer -- make sure still not generating excess
-                    compar_accumulator = np.floor((np.clip(compar_accumulator,0,N)/np.sum(np.clip(compar_accumulator,0,N)))*N)
+                    compar_accumulator = np.floor(np.divide((np.clip(compar_accumulator,0,N)),(np.sum(np.clip(compar_accumulator,0,N))),where = compar_accumulator>0)*N)
                     transitions[statefrom,:] = compar_accumulator
                     
                 #advance time
                 t = t+dt
                 times.append(t)
                     
-                # subtract transitions to sum(row) from prevstates elementwise
-                # add to new states sum(col)
+                # subtract transitions to sum(row) from prevstates elementwise and add to new states sum(col)
                 newstates = prevstates - np.nansum(transitions,axis=1)
                 newstates = newstates + np.nansum(transitions,axis=0)
                 
@@ -1026,9 +1062,9 @@ def Weighted_adaptive_Tau_leap(N,Q,t_final,sampling = 5e-05,voltage=0,Vrev = 0,i
         occupancy = occupancy.transpose()
         #upsample occupancy to uniform intervals
         # BUT this generate occupacnies that may not be real numbers
-            # though occupancy of all states at tiem i will sum to N
-        # not partiucarly an issue as still allows calculation of probability of occupancy of state i
-        # and effect will be diminishe dby averaging
+            # though occupancy of all states at time i will sum to N
+        # not particularly an issue as still allows calculation of probability of occupancy of state i
+        # and effect will be diminished by averaging
         for item in np.arange(np.size(occupancy,0)):
             interpolated_f = interp1d(times,occupancy[item,:],fill_value='extrapolate') 
             Tnew = np.arange(0, t_final, sampling)
@@ -1038,29 +1074,46 @@ def Weighted_adaptive_Tau_leap(N,Q,t_final,sampling = 5e-05,voltage=0,Vrev = 0,i
     # get mean occupancy
     mean_occ = np.mean(sampled_occupancy,2)
     occupancy = np.copy(mean_occ)
-            
+    p_t = np.divide(occupancy,np.max(np.nansum(occupancy,0)),where=occupancy>0)
+
     if 'conducting states' in Q.keys():
         conducting_occupancies = np.zeros([len(Q['conducting states'].keys()),np.size(occupancy,1)])
         for item, value in enumerate(Q['conducting states'].keys()): # multiply conductance of each state by occupancy and drivign force
             conducting_occupancies[item,:] = occupancy[value,:]*(((voltage-Vrev) *10**-3)*Q['conducting states'][value])
-        currents = np.sum(conducting_occupancies,0)
-        if plot:
-            plt.plot(Tnew,currents*10**12)
-        return(mean_occ,currents*10**12)
-        
+        currents = np.nansum(conducting_occupancies,0)
+        currents[np.isnan(currents)] = 0
+        p_t[np.isnan(p_t)]=0 # as above
+        if plot:   
+                plt.style.use('ggplot')
+                figure,axes = plt.subplots(2,1)
+                axes[0].plot(Tnew,currents*10**12,color='black') # plot current
+                axes[0].set_title("Simulated Current, N = {}, agonist pulse conc = {} M".format(N,Q['conc']))
+                axes[0].set_xlabel("t (s)")
+                axes[0].set_ylabel("pA")
+                # plotting occupancy probabilities over time
+                axes[1].set_prop_cycle(mycycle)
+                for state in np.arange(np.size(p_t[:,0],axis=0)):
+                    axes[1].plot(Tnew,p_t[state,:],label="{}".format(state))
+                axes[1].legend(fontsize=5,loc= 6,bbox_to_anchor=(1.0,0.5))
+                axes[1].set_title("P(State Occupancy at t), {}kHZ".format((1/sampling)/1000))
+                axes[1].set_xlabel("t (s)")
+                axes[1].set_ylabel("Probability")
+                plt.tight_layout()
+        return(p_t,occupancy,currents*10**12)
+
     else:
-        return(mean_occ)   
+        return(p_t,occupancy)
     
 def Weighted_adaptive_agonist_application_Tau_leap(N,Q,t_final,agonist_time,agonist_duration,first_conc,second_conc,sampling = 5e-05,voltage=0,Vrev = 0,iterations = 100,plot=True,rise_time = 250*10**-6,decay_time = 300*10**-6):
     """
-    
     Performs a Gillespie walk with Tau leaping for an agonist application
     , where the step size (Tau) is determined by the rates of each transition,
     weighted by the fraction of species in each state.
     
     This method means that runtime does not increase drastically with sampling rate outside
     of the application. But, during the pulse, the chain may change rapidly, so as an insurance
-    the interval is chosen as either the sampling rate or the adaptive interval (whichever is smaller)
+    the interval is chosen during the application as either the sampling rate or the adaptive 
+    interval (whichever is smaller), but after the pulse, Tau interval uses an adaptive strategy.
     
     Since runtime scales with the duration of agonist pulse, the interval size impacts performance
     through the above association.
@@ -1073,8 +1126,8 @@ def Weighted_adaptive_agonist_application_Tau_leap(N,Q,t_final,agonist_time,agon
     correct time). If UnboundLocalError is returned, centering the function has failed due to inadequate time
     before the maximum agonist application. Delay the agonist_time, such that
     agonist_time > 0.5* agonist_duration, and t_final, and the error should not return.
-
-
+    
+    t_final should be 2x duration
     """
     # get concentrations
     concentrations,t_concs = concentration_as_steps(first_conc=first_conc, second_conc=second_conc, dt=sampling, start_time=agonist_time, duration=agonist_duration,rise_time = rise_time, decay_time = decay_time)
@@ -1082,17 +1135,13 @@ def Weighted_adaptive_agonist_application_Tau_leap(N,Q,t_final,agonist_time,agon
     interpolated_conc_f = interp1d(t_concs,concentrations,fill_value='extrapolate') 
     # to be used at each t for getting concs
     
-    # get conc-dep properties amd max possinle rates
+    # get conc-dep properties amd max possible rates
     conc_fraction = Q['conc']
     conc_rates = [item for item in Q['conc-dep'].items()]
-    max_rates = np.copy(Q['rates'])
-    for item in conc_rates:
-        max_rates[item[0],item[1]] = np.max(np.array([first_conc,second_conc]))*(max_rates[item[0],item[1]])
-    
-    ##### can't do that, as with rate 0 (no concentration), timestep size will be inf
-    # and then will miss the application
-    # so throw in while < t-rise_time
-    
+    # max_rates = np.copy(Q['rates'])      DEPRECATED
+    # for item in conc_rates:
+    #     max_rates[item[0],item[1]] = np.max(np.array([first_conc,second_conc]))*(max_rates[item[0],item[1]])
+        
     #take initial states for N with probability given in Q['intial states']
     initial_states = [int(i) for i in Q['initial states'].keys()]
     initial_probabilities = [int(i)*N for i in Q['initial states'].values()]
@@ -1115,7 +1164,6 @@ def Weighted_adaptive_agonist_application_Tau_leap(N,Q,t_final,agonist_time,agon
             
             # advancing to agonist_time-rise_time-decay_time+sampling is valid for = 0
             # 0 should trigger no relax
-            
             while t<agonist_time-rise_time-decay_time-(0.5*agonist_duration): # while chain itself is stationary
                 pre_pulse_concs = interpolated_conc_f(np.arange(0,agonist_time-rise_time-decay_time-(0.5*agonist_duration)+sampling,sampling))
                 if not np.any(pre_pulse_concs): # if conc is zero before pulse
@@ -1130,13 +1178,14 @@ def Weighted_adaptive_agonist_application_Tau_leap(N,Q,t_final,agonist_time,agon
                     # first, get pre-pulse conc and then iniitalise a Q matrix to use in relaxation
                     newQ=copy.deepcopy(Q)
                     newQ_rates = newQ['rates']
+                    newQ.update({'conc':first_conc})
                     conc_rates = [item for item in newQ['conc-dep'].items()]
                     for item in conc_rates:
                         newQ_rates[item[0],item[1]] = (first_conc)*(newQ_rates[item[0],item[1]])
                     newQ.update({'rates':newQ_rates})
                     # then do the relaxation
                     t_inter = np.min(np.where(np.arange(0,agonist_time,sampling)>agonist_time-rise_time-decay_time-(0.5*agonist_duration)))/(1/sampling) + sampling
-                    occs,_  = Weighted_adaptive_Tau_leap(N = N,Q=newQ,t_final=t_inter,sampling=sampling,voltage=voltage,Vrev=Vrev,iterations=1,plot=False)
+                    _,occs,_  = Weighted_adaptive_Tau_leap(N = N,Q=newQ,t_final=t_inter,sampling=sampling,voltage=voltage,Vrev=Vrev,iterations=1,plot=False)
                     times = list(np.arange(0,t_inter,sampling))
                     t = t_inter
                 occupancy = occs
@@ -1167,7 +1216,7 @@ def Weighted_adaptive_agonist_application_Tau_leap(N,Q,t_final,agonist_time,agon
                 # but if conc very low (at beginning of pulse), timestep very long
                     # unles impose some condition on non-zero concs so that dt does not step over pulse
                 #for duration of the pulse, because the chain changes rapidly, use dt = sampling if dt longer
-                if t<= agonist_time-rise_time-decay_time+agonist_duration:
+                if t<= agonist_time-rise_time-decay_time+(0.5*agonist_duration):
                     if dt > sampling: #
                         dt = sampling
             
@@ -1179,7 +1228,7 @@ def Weighted_adaptive_agonist_application_Tau_leap(N,Q,t_final,agonist_time,agon
                         # because can generate negative or excessive populations of receptors,
                         # rescale draws such tht sum(draws) = N
                         # and round to nearest integer -- make sure still not generating excess
-                    compar_accumulator = np.floor((np.clip(compar_accumulator,0,N)/np.sum(np.clip(compar_accumulator,0,N)))*N)
+                    compar_accumulator = np.floor(np.divide((np.clip(compar_accumulator,0,N)),(np.sum(np.clip(compar_accumulator,0,N))),where = compar_accumulator>0)*N)
                     transitions[statefrom,:] = compar_accumulator
                     
                 #advance time
@@ -1209,19 +1258,40 @@ def Weighted_adaptive_agonist_application_Tau_leap(N,Q,t_final,agonist_time,agon
     # get mean occupancy
     mean_occ = np.mean(sampled_occupancy,2)
     occupancy = np.copy(mean_occ)
+    
+    # clip Tnew, occupancy to t_final & get p_t:
+    if Tnew[-1]>t_final:
+        occupancy = occupancy[:,:np.min(np.where(Tnew>t_final))]
+        Tnew = Tnew[:np.min(np.where(Tnew>t_final))]
+        p_t = np.divide(occupancy,np.max(np.nansum(occupancy,0)),where=occupancy>0)    
             
     if 'conducting states' in Q.keys():
         conducting_occupancies = np.zeros([len(Q['conducting states'].keys()),np.size(occupancy,1)])
         for item, value in enumerate(Q['conducting states'].keys()): # multiply conductance of each state by occupancy and drivign force
             conducting_occupancies[item,:] = occupancy[value,:]*(((voltage-Vrev) *10**-3)*Q['conducting states'][value])
-        currents = np.sum(conducting_occupancies,0)
-        if plot:
-            plt.plot(Tnew,currents*10**12)
-        return(mean_occ,currents*10**12)
-        
+        currents = np.nansum(conducting_occupancies,0)
+        currents[np.isnan(currents)] = 0
+        p_t[np.isnan(p_t)]=0 # as above
+        if plot:   
+                plt.style.use('ggplot')
+                figure,axes = plt.subplots(2,1)
+                axes[0].plot(Tnew,currents*10**12,color='black') # plot current
+                axes[0].set_title("Simulated Current, N = {}, agonist pulse conc = {} M".format(N,second_conc))
+                axes[0].set_xlabel("t (s)")
+                axes[0].set_ylabel("pA")
+                # plotting occupancy probabilities over time
+                axes[1].set_prop_cycle(mycycle)
+                for state in np.arange(np.size(p_t[:,0],axis=0)):
+                    axes[1].plot(Tnew,p_t[state,:],label="{}".format(state))
+                axes[1].legend(fontsize=5,loc= 6,bbox_to_anchor=(1.0,0.5))
+                axes[1].set_title("P(State Occupancy at t), {}kHZ".format((1/sampling)/1000))
+                axes[1].set_xlabel("t (s)")
+                axes[1].set_ylabel("Probability")
+                plt.tight_layout()
+        return(p_t,occupancy,currents*10**12)
+
     else:
-        return(mean_occ)
-    
+        return(p_t,occupancy)
 # =============================================================================
 #  Q-matrix Methods and CME simulation
 # =============================================================================
@@ -1257,7 +1327,7 @@ def Q_relax(Q,N,t_final,voltage= -60,interval= 5e-05,Vrev= 0,plot =True, just_pt
     # each component ofspectrals, k, is stored in the 3rd axis (axis =2)
     # with each time interval, p_t changes, and lit changes
     pinf = p_inf(Q['Q']) # steady-state occupancies
-    pzero = initial_occupancy/np.nansum(initial_occupancy) # occupancy probabilities for initialstates,if specified or not
+    pzero = np.divide(initial_occupancy,np.nansum(initial_occupancy),where=initial_occupancy>0) # occupancy probabilities for initials tates,if specified or not
     amplitude_coefficients = amplitude_coeff(spectrals, pzero) #calling embedded function to find the amplitude coefficients
     for intervalnum, intervaltime in enumerate(t):
         exp_component = np.exp(-eigvals*intervaltime) # calculating exponential terms at time
@@ -1271,7 +1341,8 @@ def Q_relax(Q,N,t_final,voltage= -60,interval= 5e-05,Vrev= 0,plot =True, just_pt
             conducting_occupancies = np.zeros([len(Q['conducting states'].keys()),np.size(occupancy,1)])
             for item, value in enumerate(Q['conducting states'].keys()): # multiply conductance of each state by occupancy and drivign force
                 conducting_occupancies[item,:] = occupancy[value,:]*(((voltage-Vrev) *10**-3)*Q['conducting states'][value])
-            currents = np.sum(conducting_occupancies,0)
+            currents = np.nansum(conducting_occupancies,0)
+            currents[np.isnan(currents)] = 0
             if plot:   
                 plt.style.use('ggplot')
                 figure,axes = plt.subplots(2,1)
@@ -1279,6 +1350,7 @@ def Q_relax(Q,N,t_final,voltage= -60,interval= 5e-05,Vrev= 0,plot =True, just_pt
                 axes[0].set_title("Simulated Current, N = {}, agonist conc = {} M".format(N,Q['conc']))
                 axes[0].set_xlabel("t (s)")
                 axes[0].set_ylabel("pA")
+                axes[1].set_prop_cycle(mycycle)
                 # plotting occupancy probabilities over time
                 for state in np.arange(np.size(p_t[:,0],axis=0)):
                     axes[1].plot(t,p_t[state,:],label="{}".format(state))
@@ -1291,7 +1363,7 @@ def Q_relax(Q,N,t_final,voltage= -60,interval= 5e-05,Vrev= 0,plot =True, just_pt
         else:
             return(p_t,occupancy)
 
-def Q_agonist_application(Q,N,first_conc,second_conc,agonist_time,agonist_duration,t_final,interval = 5e-05,voltage =-60,Vrev = 0,rise_time=250*10**-6,decay_time=250*10**-6,plot = True):
+def Q_agonist_application(Q,N,first_conc,second_conc,agonist_time,agonist_duration,t_final,interval = 5e-04,voltage =-60,Vrev = 0,rise_time=250*10**-6,decay_time=250*10**-6,plot = True):
     """
     Simulating a fast jump between two agonist concentrations by:
         
@@ -1304,7 +1376,7 @@ def Q_agonist_application(Q,N,first_conc,second_conc,agonist_time,agonist_durati
     - N: the number of receptors to simulate
     - first_conc (M): the concentration of the agonist before the jump
     - second_conc (M): the concentration of agonist during the jump
-    - onset_time (s): the time to apply the agonist
+    - onset_time (s): the time to apply the agonist (should be > 2x duration)
     - application_duration (s): the duration in second_conc
     - record_length (s): The length of the simulated trace
     - interval (s): The size of the timestep interval
@@ -1340,11 +1412,6 @@ def Q_agonist_application(Q,N,first_conc,second_conc,agonist_time,agonist_durati
     # pre-allocate occupancy for jump
     occupancy_in_jump = np.zeros([np.size(Qs,0),np.size(jump_times)])
     
-    # jump scenarios:
-        #pre-jump is constant conc
-        #pre-jump is zero conc
-        # jump is different conc to above
-        
     # Perform a relaxation from t = 0 until jump time in the pre-jump constant concentration of agonist
     # get t at jump
     t_at_jump = jump_times[np.min(np.where(jump_times>agonist_time-rise_time-decay_time-(0.5*agonist_duration)))] + interval
@@ -1352,6 +1419,7 @@ def Q_agonist_application(Q,N,first_conc,second_conc,agonist_time,agonist_durati
     # relax in the pre-jump_constant_conc
     R = copy.deepcopy(Q)
     R.update({'Q':Qs[:,:,0]}) # update with the Q for pre-agonist constant conc
+    R.update({'conc':first_conc}) # and the conc
     pre_jump_pt,occs,_ = Q_relax(Q=R,N = N,Vrev=Vrev,interval=interval,t_final=t_at_jump,voltage=voltage,plot=False,just_pt=False)
     occupancy_in_jump[:,:jump_indexer] = occs # store pre-jump occs
     
@@ -1373,39 +1441,53 @@ def Q_agonist_application(Q,N,first_conc,second_conc,agonist_time,agonist_durati
     #after jump, relax for remaining time in the first conc
     S = copy.deepcopy(Q)
     S.update({'Q':Qs[:,:,0]})
-    S['initial states'].update([{key,value} for key, value in enumerate(jump_pt[:,-1])]) # populate S initial states with pt from jump
+    S.update({'conc':first_conc}) # and update the conc to first_conc
+    S.update({'initial states':{}})
+    for key, value in enumerate(jump_pt[:,-1]):
+        if value >0:
+            S['initial states'].update({key:value})
     post_jump_pt,post_jump_occs,_ = Q_relax(Q=S,N = N,Vrev=Vrev,interval=interval,t_final=t_final-jump_times[-1],voltage=voltage,plot=False,just_pt=False)
-    
     # concatenate all pt & occs
-    p_t =np.hstack((pre_jump_pt,jump_pt,post_jump_pt))
+   # p_t =np.hstack((pre_jump_pt,jump_pt,post_jump_pt)) # deprecated
     occupancy =np.hstack((occupancy_in_jump,post_jump_occs))
-    # add final t (t = t_final)
-    t = np.append(t,t[-1]+interval)
-    # translate t so that jump starts at agonist time
+    
+    # translate t so that jump starts at agonist time 
+    t = np.arange(0,t_final,interval)
     t = np.concatenate((np.array([0]),t[:-1]+agonist_time-(agonist_time-rise_time-decay_time-(0.5*agonist_duration))))
-
-
+    Tnew = t
+    
+    # clip Tnew, occupancy to t_final & rederive p_t from occs:
+    if Tnew[-1]>t_final:
+        occupancy = occupancy[:,:np.min(np.where(Tnew>t_final))]
+        Tnew = Tnew[:np.min(np.where(Tnew>t_final))]
+        p_t = np.divide(occupancy,np.max(np.nansum(occupancy,0)),where=occupancy>0)
+    
+    # tidying up
     if 'conducting states' in Q.keys():
         conducting_occupancies = np.zeros([len(Q['conducting states'].keys()),np.size(occupancy,1)])
         for item, value in enumerate(Q['conducting states'].keys()): # multiply conductance of each state by occupancy and drivign force
             conducting_occupancies[item,:] = occupancy[value,:]*(((voltage-Vrev) *10**-3)*Q['conducting states'][value])
-        currents = np.sum(conducting_occupancies,0)
+        currents = np.nansum(conducting_occupancies,0)
+        currents[np.isnan(currents)] = 0 # fix for not plotting remainder whne == np.nan
+        post_jump_pt[np.isnan(post_jump_pt)]=0 # as above
+
         if plot:   
                 plt.style.use('ggplot')
                 figure,axes = plt.subplots(2,1)
-                axes[0].plot(t,currents*10**12,color='black') # plot current
+                axes[0].plot(Tnew,currents*10**12,color='black') # plot current
                 axes[0].set_title("Simulated Current, N = {}, agonist pulse conc = {} M".format(N,second_conc))
                 axes[0].set_xlabel("t (s)")
                 axes[0].set_ylabel("pA")
+                axes[1].set_prop_cycle(mycycle)
                 # plotting occupancy probabilities over time
                 for state in np.arange(np.size(p_t[:,0],axis=0)):
-                    axes[1].plot(t,p_t[state,:],label="{}".format(state))
+                    axes[1].plot(Tnew,p_t[state,:],label="{}".format(state))
                 axes[1].legend(fontsize=5,loc= 6,bbox_to_anchor=(1.0,0.5))
-                axes[1].set_title("P(State Occupancy at t), {}kHZ".format(1/interval))
+                axes[1].set_title("P(State Occupancy at t), {}kHZ".format((1/interval)/1000))
                 axes[1].set_xlabel("t (s)")
                 axes[1].set_ylabel("Probability")
                 plt.tight_layout()
-        return(p_t,occupancy,currents*10**12)
+        return(p_t,occupancy,currents[:-1]*10**12)
 
     else:
         return(p_t,occupancy)
@@ -1465,7 +1547,6 @@ def Add_Gaussian_noise(current,noise_sd = 2):
     current = current+noise
     return(current)
     
-
 def p_inf(Q):
     """given a matrix Q, returns the equilibrium probabilities of state occupancy"""
     # Performed according to Colquhoun and Hawkes (1995) notation
