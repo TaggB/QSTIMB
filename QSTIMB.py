@@ -63,7 +63,11 @@ Within, exists code for:
     - Q matrix method for relaxations
     - Q matric method for agonist applications
     
-    [4]------ Built-in functions -----
+    [4]---- Master Simultaion Runner ----
+    - Simulate function
+    - File handling functions (saving and loading)
+    
+    [5]------ Built-in functions -----
     ================================
     - For graphing transition or Q matrix
     - For adding gaussian noise
@@ -76,12 +80,18 @@ Within, exists code for:
 # =============================================================================
 # Imports
 # =============================================================================
+
+
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy import special
 from scipy.interpolate import interp1d
 import copy
-import networkx as nx
+import networkx as nx # for visualising transition matrices and Q, for microscopic reversibility
+import random
+import pickle # for saving simulate outputs
+import pandas as pd # for converting simulate outputs
+
 
 # config
 import matplotlib.colors as mcolors
@@ -90,7 +100,7 @@ colors = dict(mcolors.BASE_COLORS, **mcolors.CSS4_COLORS)
 colorlist = ['black','dimgrey','teal','darkturquoise', 'midnightblue','lightskyblue','steelblue','royalblue','lightsteelblue','darkorange', 'orange','darkgoldenrod','goldenrod','gold','khaki','yellow']
 mycycle = cycler(color=[colors[item] for item in colorlist])
 # =============================================================================
-# In-built Models for testing: Q (transition matrix) construction and modification
+# [1] In-built Models for testing: Q (transition matrix) construction and modification
 # =============================================================================
 # all models to be implemented as dicts containing:
     # rates as type np.ndarray
@@ -649,6 +659,9 @@ def GluCoo17(glu_conc = 10*10**-3):
     return(Q)
 
 # =============================================================================
+# [2] Stochastic Simulation Methods
+# =============================================================================
+# =============================================================================
 # Gillespie Method - probably best not to use. See recommended.
     # slow:
         # takes 19ms-586ms for 100ms simulation (0.1s) of GlyQ
@@ -793,7 +806,7 @@ def Tau_leap_Gillespie(N,Q,t_final,interval = 5e-05,voltage=0,Vrev = 0,iteration
             conducting_occupancies[item,:] = occupancy[value,:]*(((voltage-Vrev) *10**-3)*Q['conducting states'][value])
         currents = np.nansum(conducting_occupancies,0)
         currents[np.isnan(currents)] = 0
-        p_t[np.isnan(p_t)]=0 # as above
+        p_t[np.isnan(p_t)]=0 # as above
         if plot:   
                 plt.style.use('ggplot')
                 figure,axes = plt.subplots(2,1)
@@ -810,10 +823,10 @@ def Tau_leap_Gillespie(N,Q,t_final,interval = 5e-05,voltage=0,Vrev = 0,iteration
                 axes[1].set_xlabel("t (s)")
                 axes[1].set_ylabel("Probability")
                 plt.tight_layout()
-        return(p_t,occupancy,currents*10**12)
+        return(t,p_t,occupancy,currents*10**12)
 
     else:
-        return(p_t,occupancy)
+        return(t,p_t,occupancy)
 
 def agonist_application_tau_leap_Gillespie(N,Q,t_final,agonist_time,agonist_duration,first_conc,second_conc,interval = 5e-05,voltage=0,Vrev = 0,iterations = 100,plot=True,rise_time = 250*10**-6,decay_time = 300*10**-6):
     """
@@ -891,7 +904,7 @@ def agonist_application_tau_leap_Gillespie(N,Q,t_final,agonist_time,agonist_dura
             for statefrom, N in enumerate(prevstates):
                 for stateto in np.arange(np.size(Q['rates'],1)):
                     #compar_accumulator[stateto] = np.random.poisson((propensities[statefrom,stateto,intervalcount])*N)
-                    compar_accumulator[stateto] = np.random.poisson((Qs[statefrom,stateto,intervalcount])*N*interval) # lambda = R*t*N
+                    compar_accumulator[stateto] = np.random.poisson((Qs[statefrom,stateto,intervalcount])*N*interval) # lambda = R*t*N
 
                     compar_accumulator[np.isnan(compar_accumulator)] = 0
                     # because can generate negative or excessive populations of receptors,
@@ -915,7 +928,7 @@ def agonist_application_tau_leap_Gillespie(N,Q,t_final,agonist_time,agonist_dura
                 if value >0:
                     S['initial states'].update({key:value})  
             S.update({'conc':first_conc})
-            _,remaining_occs,_ = Tau_leap_Gillespie(N = n, Q = S,t_final = t_final-t[-1]-interval,interval = interval,voltage=voltage,Vrev = Vrev,iterations = 1,plot=False)
+            _,_,remaining_occs,_ = Tau_leap_Gillespie(N = n, Q = S,t_final = t_final-t[-1]-interval,interval = interval,voltage=voltage,Vrev = Vrev,iterations = 1,plot=False)
             iteration_occupancy[:,:,iteration] = np.hstack((occupancy,remaining_occs))
         else:
             iteration_occupancy[:,:,iteration] = occupancy[:,:np.size(iteration_occupancy,1)] # catch for single sample overspill
@@ -941,7 +954,7 @@ def agonist_application_tau_leap_Gillespie(N,Q,t_final,agonist_time,agonist_dura
             conducting_occupancies[item,:] = occupancy[value,:]*(((voltage-Vrev) *10**-3)*Q['conducting states'][value])
         currents = np.nansum(conducting_occupancies,0)
         currents[np.isnan(currents)] = 0
-        p_t[np.isnan(p_t)]=0 # as above
+        p_t[np.isnan(p_t)]=0 # as above
         if plot:   
                 plt.style.use('ggplot')
                 figure,axes = plt.subplots(2,1)
@@ -958,10 +971,10 @@ def agonist_application_tau_leap_Gillespie(N,Q,t_final,agonist_time,agonist_dura
                 axes[1].set_xlabel("t (s)")
                 axes[1].set_ylabel("Probability")
                 plt.tight_layout()
-        return(p_t,occupancy,currents*10**12)
+        return(Tnew,p_t,occupancy,currents*10**12)
 
     else:
-        return(p_t,occupancy)
+        return(Tnew,p_t,occupancy)
 # =============================================================================
 # Adaptive Tau leaping Gillespie routines
 # =============================================================================
@@ -1028,7 +1041,6 @@ def Weighted_adaptive_Tau_leap(N,Q,t_final,sampling = 5e-05,voltage=0,Vrev = 0,i
                         prevstates = np.copy(occupancy)
                     else:
                         prevstates = occupancy
-
                 else:
                     prevstates = occupancy[-1,:]
                 
@@ -1082,7 +1094,7 @@ def Weighted_adaptive_Tau_leap(N,Q,t_final,sampling = 5e-05,voltage=0,Vrev = 0,i
             conducting_occupancies[item,:] = occupancy[value,:]*(((voltage-Vrev) *10**-3)*Q['conducting states'][value])
         currents = np.nansum(conducting_occupancies,0)
         currents[np.isnan(currents)] = 0
-        p_t[np.isnan(p_t)]=0 # as above
+        p_t[np.isnan(p_t)]=0 # as above
         if plot:   
                 plt.style.use('ggplot')
                 figure,axes = plt.subplots(2,1)
@@ -1099,10 +1111,10 @@ def Weighted_adaptive_Tau_leap(N,Q,t_final,sampling = 5e-05,voltage=0,Vrev = 0,i
                 axes[1].set_xlabel("t (s)")
                 axes[1].set_ylabel("Probability")
                 plt.tight_layout()
-        return(p_t,occupancy,currents*10**12)
+        return(Tnew,p_t,occupancy,currents*10**12)
 
     else:
-        return(p_t,occupancy)
+        return(Tnew,p_t,occupancy)
     
 def Weighted_adaptive_agonist_application_Tau_leap(N,Q,t_final,agonist_time,agonist_duration,first_conc,second_conc,sampling = 5e-05,voltage=0,Vrev = 0,iterations = 100,plot=True,rise_time = 250*10**-6,decay_time = 300*10**-6):
     """
@@ -1185,7 +1197,7 @@ def Weighted_adaptive_agonist_application_Tau_leap(N,Q,t_final,agonist_time,agon
                     newQ.update({'rates':newQ_rates})
                     # then do the relaxation
                     t_inter = np.min(np.where(np.arange(0,agonist_time,sampling)>agonist_time-rise_time-decay_time-(0.5*agonist_duration)))/(1/sampling) + sampling
-                    _,occs,_  = Weighted_adaptive_Tau_leap(N = N,Q=newQ,t_final=t_inter,sampling=sampling,voltage=voltage,Vrev=Vrev,iterations=1,plot=False)
+                    _,_,occs,_  = Weighted_adaptive_Tau_leap(N = N,Q=newQ,t_final=t_inter,sampling=sampling,voltage=voltage,Vrev=Vrev,iterations=1,plot=False)
                     times = list(np.arange(0,t_inter,sampling))
                     t = t_inter
                 occupancy = occs
@@ -1271,7 +1283,7 @@ def Weighted_adaptive_agonist_application_Tau_leap(N,Q,t_final,agonist_time,agon
             conducting_occupancies[item,:] = occupancy[value,:]*(((voltage-Vrev) *10**-3)*Q['conducting states'][value])
         currents = np.nansum(conducting_occupancies,0)
         currents[np.isnan(currents)] = 0
-        p_t[np.isnan(p_t)]=0 # as above
+        p_t[np.isnan(p_t)]=0 # as above
         if plot:   
                 plt.style.use('ggplot')
                 figure,axes = plt.subplots(2,1)
@@ -1288,12 +1300,12 @@ def Weighted_adaptive_agonist_application_Tau_leap(N,Q,t_final,agonist_time,agon
                 axes[1].set_xlabel("t (s)")
                 axes[1].set_ylabel("Probability")
                 plt.tight_layout()
-        return(p_t,occupancy,currents*10**12)
+        return(Tnew,p_t,occupancy,currents*10**12)
 
     else:
-        return(p_t,occupancy)
+        return(Tnew,p_t,occupancy)
 # =============================================================================
-#  Q-matrix Methods and CME simulation
+#  [3] Q-matrix Methods and CME simulation
 # =============================================================================
 def Q_relax(Q,N,t_final,voltage= -60,interval= 5e-05,Vrev= 0,plot =True, just_pt=False):
     """Simulates the change in distribution for N receptors over t=0, t_final
@@ -1359,9 +1371,9 @@ def Q_relax(Q,N,t_final,voltage= -60,interval= 5e-05,Vrev= 0,plot =True, just_pt
                 axes[1].set_xlabel("t (s)")
                 axes[1].set_ylabel("Probability")
                 plt.tight_layout()
-            return(p_t,occupancy,currents*10**12)
+            return(t,p_t,occupancy,currents*10**12)
         else:
-            return(p_t,occupancy)
+            return(t,p_t,occupancy)
 
 def Q_agonist_application(Q,N,first_conc,second_conc,agonist_time,agonist_duration,t_final,interval = 5e-04,voltage =-60,Vrev = 0,rise_time=250*10**-6,decay_time=250*10**-6,plot = True):
     """
@@ -1420,7 +1432,7 @@ def Q_agonist_application(Q,N,first_conc,second_conc,agonist_time,agonist_durati
     R = copy.deepcopy(Q)
     R.update({'Q':Qs[:,:,0]}) # update with the Q for pre-agonist constant conc
     R.update({'conc':first_conc}) # and the conc
-    pre_jump_pt,occs,_ = Q_relax(Q=R,N = N,Vrev=Vrev,interval=interval,t_final=t_at_jump,voltage=voltage,plot=False,just_pt=False)
+    _,pre_jump_pt,occs,_ = Q_relax(Q=R,N = N,Vrev=Vrev,interval=interval,t_final=t_at_jump,voltage=voltage,plot=False,just_pt=False)
     occupancy_in_jump[:,:jump_indexer] = occs # store pre-jump occs
     
     # apply agonist during the jump
@@ -1446,7 +1458,7 @@ def Q_agonist_application(Q,N,first_conc,second_conc,agonist_time,agonist_durati
     for key, value in enumerate(jump_pt[:,-1]):
         if value >0:
             S['initial states'].update({key:value})
-    post_jump_pt,post_jump_occs,_ = Q_relax(Q=S,N = N,Vrev=Vrev,interval=interval,t_final=t_final-jump_times[-1],voltage=voltage,plot=False,just_pt=False)
+    _,post_jump_pt,post_jump_occs,_ = Q_relax(Q=S,N = N,Vrev=Vrev,interval=interval,t_final=t_final-jump_times[-1],voltage=voltage,plot=False,just_pt=False)
     # concatenate all pt & occs
    # p_t =np.hstack((pre_jump_pt,jump_pt,post_jump_pt)) # deprecated
     occupancy =np.hstack((occupancy_in_jump,post_jump_occs))
@@ -1469,7 +1481,7 @@ def Q_agonist_application(Q,N,first_conc,second_conc,agonist_time,agonist_durati
             conducting_occupancies[item,:] = occupancy[value,:]*(((voltage-Vrev) *10**-3)*Q['conducting states'][value])
         currents = np.nansum(conducting_occupancies,0)
         currents[np.isnan(currents)] = 0 # fix for not plotting remainder whne == np.nan
-        post_jump_pt[np.isnan(post_jump_pt)]=0 # as above
+        post_jump_pt[np.isnan(post_jump_pt)]=0 # as above
 
         if plot:   
                 plt.style.use('ggplot')
@@ -1487,12 +1499,166 @@ def Q_agonist_application(Q,N,first_conc,second_conc,agonist_time,agonist_durati
                 axes[1].set_xlabel("t (s)")
                 axes[1].set_ylabel("Probability")
                 plt.tight_layout()
-        return(p_t,occupancy,currents[:-1]*10**12)
+        return(Tnew,p_t,occupancy,currents[:-1]*10**12)
 
     else:
-        return(p_t,occupancy)
+        return(Tnew,p_t,occupancy)
 # =============================================================================
-# Built-In functions
+#  [4] Simulation Master Function and File Handling
+# =============================================================================
+    
+def simulate(func,n_sweeps,noise_sd = 4,**kwargs):
+    """
+    Takes Q dictionary (see example models) to simulate a record consisting of
+    n_sweeps using func. The purpose is to allow simultaion of Ephys records
+    through repeated, identical stimuli when optimal conditions for simulation
+    of that model have been established. This is more useful for stochastic 
+    simulations, where the output is different for each call
+    
+    Gaussian Noise is also added using a standard deviation value = noise_sd. 2pA
+    is recommended.
+
+    Recommendations for usage:
+        - If using fixed interval Tau methods, ensure sampling is high enough
+        that the fastest events are captured, but low enough that 'ringing',
+        rapid oscillations between values, does not occur.
+        - Generate realistic macropscopic behaviour as follows:
+           - A single iteration of a stochastic simulation function generates a trajectory.
+           - To generate a stochastic 'sweep', or single stimulus epoch, we
+           average the trajectory occupancy over several iterations to generate a current
+           for a single sweep. This current will display stochastic behaviour and should
+           closely match the equivalent stimulus being applied in a Q-matrix (CME) type
+           simulation [For proof, see Gillespie, 1977].
+           - So to generate a record, we repeat the sweep generation procedure many times.
+           
+           - First,determine how many iterations (itn), and if using fixed interval methods -
+           which sampling rate - give rise to a sweep with a current trajectory
+           that broadly recapitulates the current trajectory in Q-matrix (CME) methods: these are
+           Q_relax and Q_agonist_application.
+           - Then set that keyword argument (kwarg) = itn
+           - Then set n_sweeps = number of sweeps desired
+           
+    Usage:
+        e.g. to store all outputs in an array called 'P1':
+        for the fixed Tau interval simulation method
+        and using noise standard deviation in pA = 2.0
+        
+        P1 = simulate(func = agonist_application_tau_leap_Gillespie,n_sweeps = 10,noise_sd = 2,N=100,Q=Q,t_final = 0.5,agonist_time = 0.1,agonist_duration = 0.1,first_conc = 0,second_conc = 10*10**-3,interval = 1e-03,voltage =-60,Vrev = 0,iterations = 10)
+                  # obviously set Q as the dired Q dict before (e.g. Q = threesQ())
+                  # If kwarg not assigned, will use Default.
+        i.e. using the arguments for the base function as keyword arguments (kwargs),
+        and parameters for the simulation, ensuring that iterations is set = itn (see above)
+        as well as filling the function method (func=) to the desired method
+        and n_sweeps to number of sweeps desired in the record
+        
+    The sweeps will be plotted with offset, and the average plotted will be averaged *currents* of all
+    sweeps, where the current from each sweep is produced from average occupancy.
+    The plotted averaged occupancy probability is the average of all sweep occupancy probabilities.
+    
+    Returns:
+        a nested dict, containing:
+            - t: timepoints corresponding to samples of below
+            - p_t: occupancy_probabilities: a 3d np.ndarray, with dimensions 0=states,1=time,2=sweep number
+            - occ_t: occupancy: a 3d np.ndarray, with dimensions 0 = states,1 = time,2 = sweep number
+            - I_t: currents: a 2d np.ndarray, with dimensions 0 = time, 1 = sweep number
+            - conditions: all kwargs listed (to detail simulation conditions, e.g. N) + noise_sd + n_sweeps
+            
+    Structure of the nested dict is easily viewable for a returned record P1 by entering P1.keys().
+    Similarly, values can be accessed by P1[keyi].values()
+    Values themselves may be dicts of key:values pairs (nested)
+    """ 
+    storage = False
+    for item in np.arange(n_sweeps):
+        output = func(**kwargs,plot=False)
+        t,pt,occ,current = output[0],output[1],output[2],output[3]
+        if not storage:
+            pts = np.zeros([np.size(pt,0),np.size(pt,1),np.size(np.arange(n_sweeps))])
+            occs = np.zeros([np.size(pt,0),np.size(pt,1),np.size(np.arange(n_sweeps))])
+            currents = np.zeros([np.size(current),np.size(np.arange(n_sweeps))])
+            t = t # should be same for all (even for adaptive Tau, sampling makes np.size(t) identical)
+            storage = True
+        
+        pts[:,:,item] = pt
+        occs[:,:,item] = occ
+        currents[:,item] = Add_Gaussian_noise(current,noise_sd=noise_sd) # store current with noise
+    # set output dicts
+    record_dict = {}
+    record_dict.update({'t':t})
+    record_dict.update({'p_t':pts})
+    record_dict.update({'occ_t':occs})
+    record_dict.update({'I_t':currents})
+    record_dict.update({'conditions':kwargs})
+    record_dict['conditions'].update({'n_sweeps':n_sweeps})
+    record_dict['conditions'].update({'noise_sd':noise_sd})
+    # create plots
+    plt.style.use('ggplot')
+    figure,axes = plt.subplots(2,1)
+    # avg currents and occupancy probability
+    axes[0].plot(t,np.mean(currents,axis=1),color='black') # plot current
+    axes[0].set_title("Mean Simulated Current, N = {}".format(record_dict['conditions']['N']))
+    axes[0].set_xlabel("t (s)")
+    axes[0].set_ylabel("pA")
+    axes[1].set_prop_cycle(mycycle)
+    for state in np.arange(np.size(pts,axis=0)):
+        axes[1].plot(t,np.mean(record_dict['p_t'],axis=2)[state,:],label="{}".format(state)) # avg for all sweeps
+    axes[1].legend(fontsize=5,loc= 6,bbox_to_anchor=(1.0,0.5))
+    if 'interval' in record_dict['conditions'].keys(): # method-dependent kwarg
+        axes[1].set_title(" Mean P(State Occupancy at t), {}kHZ".format((1/record_dict['conditions']['interval'])/1000))
+    else:
+        axes[1].set_title("Mean P(State Occupancy at t), {}kHZ".format((1/record_dict['conditions']['sampling'])/1000))
+    axes[1].set_xlabel("t (s)")
+    axes[1].set_ylabel("Probability")
+    plt.tight_layout()
+    # plotting all sweeps with offset
+    offset_factor = np.max(np.abs(np.mean(currents,axis=1)))
+    fig,axs = plt.subplots(num=2)
+    axs.set_prop_cycle(mycycle)
+    for item in np.arange(n_sweeps):
+        axs.plot(t,currents[:,item]+item*offset_factor)
+        axs.annotate(text = '{}'.format(item),xy =(np.max(t)/2,np.max(np.mean(currents,axis=1)+item*offset_factor)),xycoords='data')
+    axs.set_xlabel("t (s)")
+    axs.set_title("Offset sweeps of record")
+    plt.tight_layout()
+    return(record_dict)
+
+# here: in ag_app_t_l_g: where are all of the occupancies between 0 and agonist onset?
+    # do we clip them?
+    # e.g. see
+    # would be good to get them back!
+    
+# for item in np.arange(np.size(test['I_t'],1)):
+#     plt.plot(test['t'],test['I_t'][:,item])
+    
+    
+
+def save_sim(record_dict,path,filename):
+    """
+    Provided with a record dictionary, of type produced by simulate function
+    saves file to a path. Path can be dragged. Filename should be string
+    """
+    with open(path+filename,'wb') as handle:
+        pickle.dump(record_dict,handle,protocol=pickle.HIGHEST_PROTOCOL)
+    return
+
+def load_sim(path):
+    """
+    Provided a path to a saved record dictionary, loads it and returns it in the expected format
+    """
+    with open('patch','rb') as handle:
+        record_dict = pickle.load(handle)
+    return(record_dict)
+
+def current_to_DataFrame(record_dict):
+    """
+    Provided with a record dictionary of type produced by simulate,
+    returns a pandas DataFrame to allow harmonisation with EpyPhys
+
+    """
+    curr_as_df = pd.DataFrame(data = record_dict['I_t'],index = record_dict['t'])
+    return(curr_as_df)
+
+# =============================================================================
+# [5] Built-In functions
 # =============================================================================
 def Q_graph(Q):
     """Plots Q as a graph format (I.e. as a network)"""
@@ -1543,7 +1709,7 @@ def Add_Gaussian_noise(current,noise_sd = 2):
     noise_sd refers to the standard deviation of the noise to add. Default = 2 pA
     """
     samples = np.size(current)
-    noise = np.random.normal(0,noise_sd,samples)
+    noise = np.random.default_rng(random.randint(0,2**32)).normal(0,noise_sd,samples)
     current = current+noise
     return(current)
     
