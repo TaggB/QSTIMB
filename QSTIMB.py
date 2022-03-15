@@ -3,7 +3,7 @@
 """
 @author: benjamintagg
 
-Q-matrix and Stochastic simulation based Ion Channel Model Builder
+QSTIMB: Q-matrix and Stochastic simulation based Ion Channel Model Builder
 
 Department of Neuroscience, Physiology, and Pharmacology, UCL, UK
 --------------------------------LICENSE-------------------------
@@ -100,6 +100,9 @@ from cycler import cycler
 colors = dict(mcolors.BASE_COLORS, **mcolors.CSS4_COLORS)
 colorlist = ['black','dimgrey','teal','darkturquoise', 'midnightblue','lightskyblue','steelblue','royalblue','lightsteelblue','darkorange', 'orange','darkgoldenrod','goldenrod','gold','khaki','yellow']
 mycycle = cycler(color=[colors[item] for item in colorlist])
+
+# import other libraries of module
+import QSTIMB_poisson
 # =============================================================================
 # [1] In-built Models for testing: Q (transition matrix) construction and modification
 # =============================================================================
@@ -715,7 +718,7 @@ def Gillespie_walk(Q,t_final):
     # adaptive tau
 # =============================================================================
 # =============================================================================
-# Poisson-based Tau leaping
+# binomial trial-based Tau leaping
 # =============================================================================
 def Tau_leap_Gillespie(N,Q,t_final,interval = 5e-05,voltage=0,Vrev = 0,iterations = 100,plot=True):
     """
@@ -779,8 +782,10 @@ def Tau_leap_Gillespie(N,Q,t_final,interval = 5e-05,voltage=0,Vrev = 0,iteration
     
             for statefrom, N in enumerate(prevstates):
                 for stateto in np.arange(np.size(Q['rates'],1)):
-                    compar_accumulator[stateto] = np.random.poisson(((Rates[statefrom,stateto])*N*interval)) # lambda = R*t
-                    
+                    if Rates[statefrom,stateto]>0:
+                        compar_accumulator[stateto] = np.random.binomial(N,(Rates[statefrom,stateto]*interval)/(np.nansum(Rates[statefrom,:],0)*interval))
+                    else:
+                        compar_accumulator[stateto] = 0
                     # because can generate negative or excessive populations of receptors,
                     # rescale draws such that sum(draws) = N
                     # and round to nearest integer -- make sure still not generating excess
@@ -845,6 +850,12 @@ def agonist_application_tau_leap_Gillespie(N,Q,t_final,agonist_time,agonist_dura
     #precalculate concentrations at discrete intervals, and get corrsponding times during the pulse
     concentrations,t = concentration_as_steps(first_conc=first_conc, second_conc=second_conc, dt=interval, start_time=agonist_time+(0.5*agonist_duration), duration=agonist_duration,rise_time = rise_time, decay_time = decay_time)
     
+    # first, try to concat times and concs to here
+    t_after_jump = np.arange(t[-1]+interval,t_final,interval)
+    concs_after_jump = np.zeros(np.size(t_after_jump))
+    concentrations = np.concatenate((concentrations,concs_after_jump))
+    t = np.concatenate((t,t_after_jump))
+    
     # above function generates concentrations only for a time-centred agonist application
     # so add in other times later to reduce computational cost
 
@@ -905,8 +916,10 @@ def agonist_application_tau_leap_Gillespie(N,Q,t_final,agonist_time,agonist_dura
             for statefrom, N in enumerate(prevstates):
                 for stateto in np.arange(np.size(Q['rates'],1)):
                     #compar_accumulator[stateto] = np.random.poisson((propensities[statefrom,stateto,intervalcount])*N)
-                    compar_accumulator[stateto] = np.random.poisson((Qs[statefrom,stateto,intervalcount])*N*interval) # lambda = R*t*N
-
+                    if Qs[statefrom,stateto,intervalcount]>0:
+                        compar_accumulator[stateto] = np.random.binomial(N,(Qs[statefrom,stateto,intervalcount]*interval)/(np.nansum(Qs[statefrom,:,intervalcount],0)*interval))
+                    else:
+                        compar_accumulator[stateto] = 0
                     compar_accumulator[np.isnan(compar_accumulator)] = 0
                     # because can generate negative or excessive populations of receptors,
                     # rescale draws such tht sum(draws) = N
@@ -930,7 +943,7 @@ def agonist_application_tau_leap_Gillespie(N,Q,t_final,agonist_time,agonist_dura
                     S['initial states'].update({key:value})  
             S.update({'conc':first_conc})
             _,_,remaining_occs,_ = Tau_leap_Gillespie(N = n, Q = S,t_final = t_final-t[-1]-interval,interval = interval,voltage=voltage,Vrev = Vrev,iterations = 1,plot=False)
-            iteration_occupancy[:,:,iteration] = np.hstack((occupancy,remaining_occs))
+            iteration_occupancy[:,:,iteration] = np.hstack((occupancy,remaining_occs))[:,:np.size(iteration_occupancy,1)]
         else:
             iteration_occupancy[:,:,iteration] = occupancy[:,:np.size(iteration_occupancy,1)] # catch for single sample overspill
         
@@ -1049,7 +1062,7 @@ def Weighted_adaptive_Tau_leap(N,Q,t_final,sampling = 5e-05,voltage=0,Vrev = 0,i
                 # determine which transitions occur
                 for statefrom, N in enumerate(prevstates):
                     for stateto in np.arange(np.size(Q['rates'],1)):
-                        compar_accumulator[stateto] = np.random.poisson(((Rates[statefrom,stateto])*N*dt)) # lambda = R*t
+                        compar_accumulator[stateto] = np.random.binomial(N,((Rates[statefrom,stateto])*dt)/(np.nansum(Rates[statefrom],0)*dt))
                         
                         # because can generate negative or excessive populations of receptors,
                         # rescale draws such tht sum(draws) = N
@@ -1221,12 +1234,14 @@ def Weighted_adaptive_agonist_application_Tau_leap(N,Q,t_final,agonist_time,agon
                 if t<= agonist_time+rise_time+agonist_duration:
                     if dt > sampling: #
                         dt = sampling
-            
+                        
                 # determine which transitions occur in next interval
                 for statefrom, N in enumerate(prevstates):
                     for stateto in np.arange(np.size(Q['rates'],1)):
-                        compar_accumulator[stateto] = np.random.poisson(((Rates[statefrom,stateto])*N*dt)) # lambda = R*t
-                        
+                        if Rates[statefrom,stateto]>0:
+                            compar_accumulator[stateto] = np.random.binomial(N,(Rates[statefrom,stateto]*dt)/(np.nansum(Rates[statefrom,:],0)*dt)) # probability must be normalised, so scale to norm factor by propensity
+                        else:
+                            compar_accumulator[stateto] = 0
                         # because can generate negative or excessive populations of receptors,
                         # rescale draws such tht sum(draws) = N
                         # and round to nearest integer -- make sure still not generating excess
@@ -1448,6 +1463,8 @@ def Q_agonist_application(Q,N,first_conc,second_conc,agonist_time,agonist_durati
             if value >0:
                 S['initial states'].update({key:value})
         _,post_jump_pt,post_jump_occs,_ = Q_relax(Q=S,N = N,Vrev=Vrev,interval=interval,t_final=t_final-jump_times[-1],voltage=voltage,plot=False,just_pt=False)
+        post_jump_pt[np.isnan(post_jump_pt)]=0 # as above
+
         # concatenate all pt & occs
         occupancy =np.hstack((occupancy_in_jump,post_jump_occs))
     else:
@@ -1463,8 +1480,6 @@ def Q_agonist_application(Q,N,first_conc,second_conc,agonist_time,agonist_durati
             conducting_occupancies[item,:] = occupancy[value,:]*(((voltage-Vrev) *10**-3)*Q['conducting states'][value])
         currents = np.nansum(conducting_occupancies,0)
         currents[np.isnan(currents)] = 0 # fix for not plotting remainder whne == np.nan
-        post_jump_pt[np.isnan(post_jump_pt)]=0 # as above
-
         if plot:   
                 plt.style.use('ggplot')
                 figure,axes = plt.subplots(2,1)
@@ -1615,7 +1630,7 @@ def load_sim(path):
     """
     Provided a path to a saved record dictionary, loads it and returns it in the expected format
     """
-    with open('patch','rb') as handle:
+    with open(path,'rb') as handle:
         record_dict = pickle.load(handle)
     return(record_dict)
 
@@ -1831,3 +1846,65 @@ def make_Q_reversible(Q,show=False,protected_rates = False):
         return(Q,Q_logical)
     else:
         return(Q)
+
+def resample_current(simulation_dict,freq,Vrev=0,voltage=False,update=False,keepnoise=True):
+    """
+    A function primarily intended for changing sampling of an existing simulations,but
+    has several other uses.
+    
+    Resamples a current to a desired frequency in Hz using the raw occupancies (which
+    are the raw data in trajectory type simualtions). 
+    Can also be used to change driving force of a simulation (if voltage is not False and is
+    instead set to mV value) or if Vrev is changed.
+    
+    
+    A simulation dict should be provided of type produced by simulate function
+    that contains the key 'occ_t', which is a numpy.ndarray of shape(nstates,nsamples,nsweeps)
+
+    If update = True (Default = False), the simualtion_dict is updated. Otherwise,
+    a new dictionary is returned containing the upsampled values
+    
+    if keepnoise = True (default), the existing noise is layered onto the current, otherwise,
+    it should be set to a value (in pA) to add onto a denoised, resampled current.
+    
+    This could be adapted to change N as well.
+    """
+    if voltage==False:
+        flag = 'newdriving'
+        voltage=simulation_dict['conditions']['voltage']
+    pt = copy.deepcopy(simulation_dict['p_t']) # p_t is pre-normalised in trajectory type simulations (i.e. = occ/N)
+    times = simulation_dict['t']
+    # have to use 1d to avoid overflow in interpolation, so interpolate by looping
+    Tnew = np.arange(0, simulation_dict['t'][-1], 1/freq)
+    resampled_pt = np.zeros([pt.shape[0],np.size(Tnew),pt.shape[2]])
+    for sweep in np.arange(pt.shape[2]):
+        for state in np.arange(pt.shape[0]):
+            interpolated_f = interp1d(times,pt[state,:,sweep],fill_value='extrapolate') 
+            upsampled_pt = interpolated_f(Tnew)
+            resampled_pt[state,:,sweep] = upsampled_pt
+    # using resampled p_t, get occs and the currents
+    resampled_occs = resampled_pt*simulation_dict['conditions']['N']
+    resampled_currs = np.zeros([len(simulation_dict['conditions']['Q']['conducting states'].values()),np.size(Tnew),pt.shape[2]])
+    for item, value in enumerate(simulation_dict['conditions']['Q']['conducting states'].items()): # multiply conductance of each state by occupancy and drivign force
+        state,conductance = value
+        resampled_currs[item,:,:] = resampled_occs[state,:,:]*(((voltage-Vrev) *10**-3)*conductance)
+    resampled_currs = np.nansum(resampled_currs,0)
+    resampled_currs = resampled_currs*10**12
+    if keepnoise == True:
+        for item in np.arange(np.size(resampled_currs,1)):
+            resampled_currs[:,item] = Add_Gaussian_noise(resampled_currs[:,item],noise_sd=simulation_dict['conditions']['noise_sd'])
+        flag2='unchanged'
+    elif keepnoise>0:
+        resampled_currs = Add_Gaussian_noise(resampled_currs,noise_sd=keepnoise)
+    if not update:
+        return(Tnew,resampled_pt,resampled_occs,resampled_currs)
+    else:
+        if flag == 'newdriving':
+            simulation_dict['conditions'].update({'voltage':voltage})
+        if flag2 !='unchanged':
+            simulation_dict['conditions'].update({'noise_sd':keepnoise})
+
+        simulation_dict.update({'t':Tnew})
+        simulation_dict.update({'p_t':resampled_pt})
+        simulation_dict.update({'occ_t':resampled_occs})
+        simulation_dict.update({'I_t':resampled_currs})
