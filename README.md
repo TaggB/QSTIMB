@@ -188,7 +188,55 @@ which returns:
 '''
 t is simply the time intervals (samples) - i.e. the timepoints at which the simulation attributes correspond to.
 </br>
-p_t is the occupancy probability at a givne value of t
+p_t is the occupancy probability at a given value of t.
+   I.e. values are between 0 and 1, and at a given time point, sum to 1.0 across the values for all states.
+   It can be accessed as simulation_dictionary['p_t']
+   It has dimensions k X t X r, where k is the number of model states, t is the number of time points (equal in length to 't'), and r is the number of epochs in the simulation ( = n_sweeps, in the case above = 100)
+   p_t is created by dividing occ_t/N
+</br>
+occ_t is the real occupancy of each state. 
+   It can be accessed as simulation_dictionary['occ_t']
+   Its values are between 0 and N at each time point.
+   occ_t also has k X t X r shape.
+</br>
+I_t is the current
+   It is produced in the simualtion by multiplying the conductances of all open states by their associated conductance, and then taking the sum at each tiem point.
+   It can be accessed as simulation_dictionary['I_t']
+   It has shape t x r
+</br>
+conditions is a dictionary of the model object used for the simulation, By now, it should have familiar structure.
+   It can be accessed as simulation_dictionary['conditions']
+   nested keys can be viewed by    It can be accessed as simulation_dictionary['conditions'].keys().
+</br>
+</br>
+The above information should be sufficient to perform plotting, averaging and further analysis.
+
+We can also easily convert the current to a standard pandas DataFrame format, to allow subsequent analysis using EPyPhys or other custom routines. 
+''Python
+
+      simulated_current = qs.current_to_DataFrame(simulation_dictionary)
+'''
+In this object, which I have decided to call 'simulated_current', each sweep is a column of the DataFrame, associated with a timestamped index. This allows us to use pandas built-in methods. Other packages exist should the user wish to convert to other formats (e.g. ABF or pclamp files).
+</br>
+In EPyPhys, we can do all sorts of analysis on this simulated current - e.g. noise analysis (of many varieties), fitting time constants etc.
+For now, I shall display an example case using code only from the QSTIMB module.
+
+</br>
+
+## **Example usage case**
+Currents arise from the same population of receptors with stochastic variation. If we wanted to fit a model, understanding whether a particular mechanism accounts for the variance we observe allows us to further optimise model accuracy. This is because it allows us to consider not only whether it accounts for one current, but rather, all potential currents we may observe in a recording.
+</br>
+Alternatively, we might wish to understand how particular kinetics within a mechanism change a receptor's responsiveness or kinetics.
+</br>
+Commonly, this is performed using noise analysis (or fluctuation analysis). Here, we will use a realistic agonist application and actually apply non-stationary current fluctuation analysis - see Sigg (1994) or Harveit and Veruki (2006,2007) for explanation.
+</br>
+First, we simulate, save, and load a current as above.
+</br>
+Then, I decided to see how changing th number of epochs used changed the estimates of N, weighted signle channel conductance, and peak open probability. To do this, I used Monte Carlo simulation (sampling repeititively without replacement). Fortunately, this code is built into QSTIMB, and could be modified as desired.
+
+
+  
+  
 
 
 
