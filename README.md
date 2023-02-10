@@ -171,6 +171,25 @@ Great, so we have saved three iterations of a simulation. Now we can load them.
 Where path_to_simulation is simply the concatenation of the direcotry and filename above (again, we cna drag this in by dragging the desired simulation file into the terminal and copy/pasting.
 ## **Simulation file format**
 Now we have a simulation - perhaps a single, or multiple epochs - either run alone, or using the simulate function, we can access the object. For the pruposes of this, We wil assume that we are loading a simulation as above.
+</br>
+''Python
+
+      simulation_dictionary= qs.load_sim(path_to_simulation)
+'''
+The structure of the simulation dictionary is fairly intuitive, and can be appreciated by reading the keys of the dictionary
+''Python
+
+      simulation_dictionary.keys()
+'''
+which returns:
+''Python
+
+      dict_keys(['t', 'p_t', 'occ_t', 'I_t', 'conditions'])
+'''
+t is simply the time intervals (samples) - i.e. the timepoints at which the simulation attributes correspond to.
+</br>
+p_t is the occupancy probability at a givne value of t
+
 
 
 
