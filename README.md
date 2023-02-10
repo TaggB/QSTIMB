@@ -15,41 +15,41 @@ Models are initialised as dictionaries containing all of the necessary informati
 Several example model dictionaries are included to give an illustration of how the object should be created. As a simple case, let's consider the builtin ThreesQ model, which is Smod34 from Harveit and Veruki (2006). In this scheme, arbitrary ligand-gated ion channel-coupled receptors can exist in resting, agonist bound, or open states
 
 '''Python
-def threeS(agonist_conc =5*(10**-3)):
-    """
-   Classical three state ion channel receptor model
-   using constants from Harveit and Veruki (2006 - their Smod34)
-   
-   - [0] Unbound, closed state
-   - [1] Bound, closed state
-   - [2] open state
-   
-   such that:
-       [0]--[1]--[2]
-   
-    """
-    Q = {}
-    tr = np.zeros([3,3]) # for 3 states
-    tr[0,1] = (6*10**6)*agonist_conc
-    tr[1,0] = 100
-    tr[1,2] = 1000
-    tr[2,1] = 750
-    tr[tr==0] = np.nan
-    Q.update({'rates':tr}) # transition matrix: used by stochastic methods
-    Q.update({'conc':agonist_conc})
-    Q.update({'conducting states':{}}) # allows defiance of convention that lowest numbered states are open
-    Q['conducting states'].update({2:50*10**-12}) # state 3 is open with conductance 50 pS
-    Q.update({'conc-dep':{}}) # concentration-dependent rates
-    Q['conc-dep'].update({(0,1)})
-    Q.update({'voltage-dep':{}}) # voltage-dependent rates (none here)
-    Q.update({'initial states':{}})
-    Q['initial states'].update({0:1}) # initialise in state 0 with probability of 1
-    q = np.copy(tr)
-    for row in range(0,np.size(q,axis=0)): # Q matrix to convention - used by Q matrix method / CME
-        q[row,row] = - np.nansum(q[row])
-    Q.update({'Q':q})
-    Q['Q'][~np.isfinite(Q['Q'])]=0
-    return(Q)
+    def threeS(agonist_conc =5*(10**-3)):
+        """
+       Classical three state ion channel receptor model
+       using constants from Harveit and Veruki (2006 - their Smod34)
+
+       - [0] Unbound, closed state
+       - [1] Bound, closed state
+       - [2] open state
+
+       such that:
+           [0]--[1]--[2]
+
+        """
+        Q = {}
+        tr = np.zeros([3,3]) # for 3 states
+        tr[0,1] = (6*10**6)*agonist_conc
+        tr[1,0] = 100
+        tr[1,2] = 1000
+        tr[2,1] = 750
+        tr[tr==0] = np.nan
+        Q.update({'rates':tr}) # transition matrix: used by stochastic methods
+        Q.update({'conc':agonist_conc})
+        Q.update({'conducting states':{}}) # allows defiance of convention that lowest numbered states are open
+        Q['conducting states'].update({2:50*10**-12}) # state 3 is open with conductance 50 pS
+        Q.update({'conc-dep':{}}) # concentration-dependent rates
+        Q['conc-dep'].update({(0,1)})
+        Q.update({'voltage-dep':{}}) # voltage-dependent rates (none here)
+        Q.update({'initial states':{}})
+        Q['initial states'].update({0:1}) # initialise in state 0 with probability of 1
+        q = np.copy(tr)
+        for row in range(0,np.size(q,axis=0)): # Q matrix to convention - used by Q matrix method / CME
+            q[row,row] = - np.nansum(q[row])
+        Q.update({'Q':q})
+        Q['Q'][~np.isfinite(Q['Q'])]=0
+        return(Q)
 '''
 So first, run the line
 '''python
@@ -78,22 +78,22 @@ This model, once defined, can then be passed to the function that performs simul
 First, define a model object. Here, I shall use the threesQ model from above, with default arguments (5 mM agonist). Note that the model dictionary cna be updated, should one wish to change the rates between simulations. A deep copy is recommended (using the .copy(deep=True) method).
 
 '''Python
-testmodel = threesQ()
+    testmodel = threesQ()
 '''
 
 A simple simulation can then be performed with the method of choice. Since the CME method is deterministic, it will always return the same simualted current and occupancies. Runtime is dependent on mdoel compelxity, but should not take more than a few seconds with <25 states. If a relaxation  to steady-state is desired, this is relatively simple. Here, we will use 50 receptors (N), at a sampling frequency of 20 kHz, for a total time of 10 ms.
 
 '''Python
-testmodel = threesQ()
-model_outputs = Q_relax(Q=testmodel,N=50,t_final = 10*(10**-3),voltage= -60,interval= 5e-05,Vrev= 0,plot =True, just_pt=False)
+    testmodel = threesQ()
+    model_outputs = Q_relax(Q=testmodel,N=50,t_final = 10*(10**-3),voltage= -60,interval= 5e-05,Vrev= 0,plot =True, just_pt=False)
 '''
 The simulation should be displayed and all relevant information stored in model outputs. The nature of this output, as well as means for saving and loading the data is detailed below.
 
 We can also simulate realistic agonist applications, where the concentration of agonist is changed. This approach uses realistic concentration jumps (see raw code for details: Credit to Andrew Plested for method). We will use the same number of receptors, sampling frequency, and model. This time, the receptors are initially in no agonist (first_conc = 0). At 5 ms (agonist_time), 5 mM agonist is applied (second_conc) for 1 ms (agonist_duration). The receptors are simulated for a further 4 ms (t_final). This means that a relaxation is applied once the agonist is completely removed. The rise_time and decay_time arguments specify how fast the exchange occurs between first_conc and second_conc. By default, these are both  250 us.
 
 '''Python
-testmodel = threesQ()
-model_outputs = Q_agonist_application(Q=testmodel,N=50,first_conc=0,second_conc=5*10**-3,agonist_time=5*(10**-3),agonist_duration = 1*(10**-3),t_final = 10*10**-3,interval = 5e-05,voltage =-60,Vrev = 0,rise_time=250*10**-6,decay_time=250*10**-6,plot = True):
+    testmodel = threesQ()
+    model_outputs = Q_agonist_application(Q=testmodel,N=50,first_conc=0,second_conc=5*10**-3,agonist_time=5*(10**-3),agonist_duration = 1*(10**-3),t_final = 10*10**-3,interval = 5e-05,voltage =-60,Vrev = 0,rise_time=250*10**-6,decay_time=250*10**-6,plot = True):
 '''
 
 
