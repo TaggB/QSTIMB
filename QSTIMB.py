@@ -55,8 +55,8 @@ Within, exists code for:
         - for realistic fast agonist applications
             (method of discretising concentrations credited to AP Plested)
             
-    [NB] Relaxations (i.e. the non-agonist application procedures)are much faster
-    and should be used in first instance.
+    [NB] Relaxations (i.e. the non-agonist application procedures) are much faster
+    and should be used in first instance for most cases.
     
     [3]---- CME Simulation Methods ----
     ================================
@@ -74,7 +74,10 @@ Within, exists code for:
     - Methods for enforcing microscopic reversibility onto Q matrix (CME)
     - Realistic concentration jumps (stochastic and CME) (Credit AP Plested) 
     - Functions associated with Q matrix method calculations (CME)
-
+    
+    [6]------ Unused (working) code for model fitting -----
+    - Firefly algorithm
+    - 'Fittigration' method - an avolutionary algorithm
 """
 
 # =============================================================================
@@ -92,7 +95,7 @@ import random
 import pickle # for saving simulate outputs
 import pandas as pd # for converting simulate outputs
 from tqdm import tqdm # progress bar for simulate
-
+from itertools import combinations
 
 # config
 import matplotlib.colors as mcolors
@@ -573,6 +576,8 @@ def GluCoo17(glu_conc = 10*10**-3):
     are occupancy-depende, whereas in this model, entry to is concentration-dependent
     (not occupancy-dependent), and recovery is dimensionless.
     
+    Nb see example of the relationships matrix
+    
     [0] Open state: subconductance level 1
     [1] Open state: subconductance level 2
     [2] Open state: subconductance level 3
@@ -660,6 +665,26 @@ def GluCoo17(glu_conc = 10*10**-3):
         q[row,row] = - np.nansum(q[row])
     Q.update({'Q':q})
     Q['Q'][~np.isfinite(Q['Q'])]=0
+    #### example of relationship constraint matrices
+    kk_0 = np.zeros_like(q) # contains one hot encodings to identify relaitonship existence
+    kk_1 = np.ones_like(q) # contains mutliple rules for the relationships
+    kk_0[5,0],kk_0[6,1],kk_0[7,2],kk_0[8,3] = 469,469,469,469 # beta one-hot encoding
+    kk_1[5,0],kk_1[6,1],kk_1[7,2],kk_1[8,3] = 1,2,2,4 # beta multiples
+    kk_0[0,5],kk_0[1,6],kk_0[2,7],kk_0[3,8] = 323,323,323,323 # alpha
+    kk_1[0,5],kk_1[1,6],kk_1[2,7],kk_1[3,8] = 1,1,1,1
+    kk_0[4,5],kk_0[5,6],kk_0[6,7],kk_0[7,8],kk_0[9,10],kk_0[10,11],kk_0[11,12],kk_0[12,13]  = 121,121,121,121,121,121,121,121# k_on encoding
+    kk_1[4,5],kk_1[5,6],kk_1[6,7],kk_1[7,8],kk_1[9,10],kk_1[10,11],kk_1[11,12],kk_1[12,13] = 4,3,2,1,3,3,2,1 # multiples k_on
+    kk_0[5,4],kk_0[6,5],kk_0[7,6],kk_0[8,7],kk_0[12,11],kk_0[13,12],kk_0[15,14],kk_0[16,15] = 768,768,768,768,768,768,768,768 # k_off encoding
+    kk_1[5,4],kk_1[6,5],kk_1[7,6],kk_1[8,7],kk_1[12,11],kk_1[13,12],kk_1[15,14],kk_1[16,15] = 1,2,3,4,2,3,1,2 # k_off multiples
+    kk_0[6,11],kk_0[7,12],kk_0[8,13] = 567,567,567 # delta_1
+    kk_1[6,11],kk_1[7,12],kk_1[8,13] = 2,3,4 # delta_1
+    kk_0[11,14],kk_0[12,15],kk_0[13,16] = 987,987,987 # delta_2
+    kk_1[11,14],kk_1[12,15],kk_1[13,16] = 1,2,3 # delta_2
+    kk_0[10,5],kk_0[11,6],kk_0[12,7],kk_0[13,8] = 434,434,434,434 # gamma
+    kk_1[10,5],kk_1[11,6],kk_1[12,7],kk_1[13,8] = 1,1,1,1 
+    kk = np.stack((kk_0,kk_1),axis=2)
+    Q.update({'relationships':kk})
+
     return(Q)
 
 # =============================================================================
@@ -1503,7 +1528,7 @@ def Q_agonist_application(Q,N,first_conc,second_conc,agonist_time,agonist_durati
 # =============================================================================
 #  [4] Simulation Master Function and File Handling
 # =============================================================================
-def simulate(func,n_sweeps,noise_sd = 4,**kwargs):
+def simulate(func,n_sweeps,noise_sd = 4,show_progress=True,graph=True,**kwargs):
     """
     Takes Q dictionary (see example models) to simulate a record consisting of
     n_sweeps using func. The purpose is to allow simultaion of Ephys records
@@ -1564,7 +1589,8 @@ def simulate(func,n_sweeps,noise_sd = 4,**kwargs):
     Values themselves may be dicts of key:values pairs (nested)
     """ 
     storage = False
-    for item in tqdm(np.arange(n_sweeps)): # progress bar updates at each sweep
+    show_progress = not show_progress # added
+    for item in tqdm(np.arange(n_sweeps),disable=show_progress): # progress bar updates at each sweep
         output = func(**kwargs,plot=False)
         t,pt,occ,current = output[0],output[1],output[2],output[3]
         if not storage:
@@ -1577,6 +1603,10 @@ def simulate(func,n_sweeps,noise_sd = 4,**kwargs):
         pts[:,:,item] = pt
         occs[:,:,item] = occ
         currents[:,item] = Add_Gaussian_noise(current,noise_sd=noise_sd) # store current with noise
+        # if not show_progress:
+        #     if item == n_sweeps-1:
+        #         tqdm.ncols=0    
+        
     # set output dicts
     record_dict = {}
     record_dict.update({'t':t})
@@ -1588,33 +1618,34 @@ def simulate(func,n_sweeps,noise_sd = 4,**kwargs):
     record_dict['conditions'].update({'noise_sd':noise_sd})
     # create plots
     plt.style.use('ggplot')
-    figure,axes = plt.subplots(2,1)
+    if graph:
+        figure,axes = plt.subplots(2,1)
     # avg currents and occupancy probability
-    axes[0].plot(t,np.mean(currents,axis=1),color='black') # plot current
-    axes[0].set_title("Mean Simulated Current, N = {}".format(record_dict['conditions']['N']))
-    axes[0].set_xlabel("t (s)")
-    axes[0].set_ylabel("pA")
-    axes[1].set_prop_cycle(mycycle)
-    for state in np.arange(np.size(pts,axis=0)):
-        axes[1].plot(t,np.mean(record_dict['p_t'],axis=2)[state,:],label="{}".format(state)) # avg for all sweeps
-    axes[1].legend(fontsize=5,loc= 6,bbox_to_anchor=(1.0,0.5))
-    if 'interval' in record_dict['conditions'].keys(): # method-dependent kwarg
-        axes[1].set_title(" Mean P(State Occupancy at t), {}kHZ".format((1/record_dict['conditions']['interval'])/1000))
-    else:
-        axes[1].set_title("Mean P(State Occupancy at t), {}kHZ".format((1/record_dict['conditions']['sampling'])/1000))
-    axes[1].set_xlabel("t (s)")
-    axes[1].set_ylabel("Probability")
-    plt.tight_layout()
-    # plotting all sweeps with offset
-    offset_factor = np.max(np.abs(np.mean(currents,axis=1)))
-    fig,axs = plt.subplots(num=2)
-    axs.set_prop_cycle(mycycle)
-    for item in np.arange(n_sweeps):
-        axs.plot(t,currents[:,item]+item*offset_factor)
-        axs.annotate(text = '{}'.format(item),xy =(np.max(t)/2,np.max(np.mean(currents,axis=1)+item*offset_factor)),xycoords='data')
-    axs.set_xlabel("t (s)")
-    axs.set_title("Offset sweeps of record")
-    plt.tight_layout()
+        axes[0].plot(t,np.mean(currents,axis=1),color='black') # plot current
+        axes[0].set_title("Mean Simulated Current, N = {}".format(record_dict['conditions']['N']))
+        axes[0].set_xlabel("t (s)")
+        axes[0].set_ylabel("pA")
+        axes[1].set_prop_cycle(mycycle)
+        for state in np.arange(np.size(pts,axis=0)):
+            axes[1].plot(t,np.mean(record_dict['p_t'],axis=2)[state,:],label="{}".format(state)) # avg for all sweeps
+        axes[1].legend(fontsize=5,loc= 6,bbox_to_anchor=(1.0,0.5))
+        if 'interval' in record_dict['conditions'].keys(): # method-dependent kwarg
+            axes[1].set_title(" Mean P(State Occupancy at t), {}kHZ".format((1/record_dict['conditions']['interval'])/1000))
+        else:
+            axes[1].set_title("Mean P(State Occupancy at t), {}kHZ".format((1/record_dict['conditions']['sampling'])/1000))
+        axes[1].set_xlabel("t (s)")
+        axes[1].set_ylabel("Probability")
+        plt.tight_layout()
+        # plotting all sweeps with offset
+        offset_factor = np.max(np.abs(np.mean(currents,axis=1)))
+        fig,axs = plt.subplots(num=2)
+        axs.set_prop_cycle(mycycle)
+        for item in np.arange(n_sweeps):
+            axs.plot(t,currents[:,item]+item*offset_factor)
+            axs.annotate(text = '{}'.format(item),xy =(np.max(t)/2,np.max(np.mean(currents,axis=1)+item*offset_factor)),xycoords='data')
+        axs.set_xlabel("t (s)")
+        axs.set_title("Offset sweeps of record")
+        plt.tight_layout()
     return(record_dict)
     
 def save_sim(record_dict,path,filename):
@@ -1795,59 +1826,61 @@ def path_rates(path,adjusted_rate_matrix):
     path_rate = np.product(edge_rates) #rate of the path from source:target = prob(T1)*prob(T2)... where T1... are all transitions in that path
     return(path_rate)
 
-def make_Q_reversible(Q,show=False,protected_rates = False):
-    """Taking a Q matrix and applying microscopic reversibility to it
-    using minimum spanning tree principle from Colquhoun et al., 2004
+# def make_Q_reversible(Q,show=False,protected_rates = False):
+#     """Taking a Q matrix and applying microscopic reversibility to it
+#     using minimum spanning tree principle from Colquhoun et al., 2004
     
-    A graph is constructed, identifying the rates to constrain, and the
-    remainder are set by microscopic reversibility. For rates to be set
-    by MR, a minimum spanning tree is identified. By the principle that these
-    form independent cycles, the MR rates can then be set in any order.
+#     A graph is constructed, identifying the rates to constrain, and the
+#     remainder are set by microscopic reversibility. For rates to be set
+#     by MR, a minimum spanning tree is identified. By the principle that these
+#     form independent cycles, the MR rates can then be set in any order.
     
-    Args:
-    Q: a Q matrix containing rates. It is easiest if this matrix contains
-        rates that one wants to constrain the model by. Any rates that exist
-        but should be set by MR should be any value >0. The option will be
-        given to select which rates should be constrained (see protected_rates too).
+#     Args:
+#     Q: a Q matrix containing rates. It is easiest if this matrix contains
+#         rates that one wants to constrain the model by. Any rates that exist
+#         but should be set by MR should be any value >0. The option will be
+#         given to select which rates should be constrained (see protected_rates too).
         
-    show (Default=False): 
-        When = True, a graph is produced to show the model, with each node as a state
+#     show (Default=False): 
+#         When = True, a graph is produced to show the model, with each node as a state
     
-    protected_rates (Default = False). 
-            When False, the user will be asked to
-            select rates to constrain (i.e those not to be set by MR). These
-            will then form an additional output for future usage. Otherwise,
-            protected_rates should be entered in the format as the type produced
-            from this function, and they will not be output.
+#     protected_rates (Default = False). 
+#             When False, the user will be asked to
+#             select rates to constrain (i.e those not to be set by MR). These
+#             will then form an additional output for future usage. Otherwise,
+#             protected_rates should be entered in the format as the type produced
+#             from this function, and they will not be output.
             
-            E.g. In first instance, use: Q,protected_rates = make_Q_reversible(Q,protected_rates=False)
-            Then using the output from above, use: Q = make_Q_reversible(Q,protected_rates=protected rates)
+#             E.g. In first instance, use: Q,protected_rates = make_Q_reversible(Q,protected_rates=False)
+#             Then using the output from above, use: Q = make_Q_reversible(Q,protected_rates=protected rates)
+            
+#             The user will be prompted to enter edges to constrain in format [from,to];[from2,to2] etc.
     
-    """
-    if not np.any(protected_rates):
-        Q_logical = logicalQ_constructor(Q) #calling embedded to create a logical matrix
-    else:
-        Q_logical = protected_rates
-    logic_graph = nx.MultiDiGraph(Q_logical)
-    for edge in logic_graph.edges():
-        # rates to be set by microscopic reversibility have weight 1, set have weight 0.5
-        if logic_graph.get_edge_data(edge[0],edge[1])[0]['weight'] ==1: # rate ij = rateji*(product rates of forward route/product rates of reverse route)
-            # where item[0] is source and itme[1] is target, getting shortest forward and reverse paths
-            forward_path = nx.shortest_path(logic_graph,edge[0],edge[1])
-            reverse_path = nx.shortest_path(logic_graph,edge[1],edge[0])
-            # getting product of rates along this path using embedded function
-            forward_rates_prod = path_rates(forward_path,Q)
-            reverse_rates_prod = path_rates(reverse_path,Q)
-            Q[edge[0],edge[1]] = Q[edge[1],edge[0]] * (forward_rates_prod/reverse_rates_prod)
-    if show:
-        Qgraph = nx.MultiDiGraph(Q)
-        nx.draw(Qgraph,pos = nx.spring_layout(Qgraph),with_labels=True)
-    if not np.any(protected_rates):
-        return(Q,Q_logical)
-    else:
-        return(Q)
+#     """
+#     if not np.any(protected_rates):
+#         Q_logical = logicalQ_constructor(Q) #calling embedded to create a logical matrix
+#     else:
+#         Q_logical = protected_rates
+#     logic_graph = nx.MultiDiGraph(Q_logical)
+#     for edge in logic_graph.edges():
+#         # rates to be set by microscopic reversibility have weight 1, set have weight 0.5
+#         if logic_graph.get_edge_data(edge[0],edge[1])[0]['weight'] ==1: # rate ij = rateji*(product rates of forward route/product rates of reverse route)
+#             # where item[0] is source and itme[1] is target, getting shortest forward and reverse paths
+#             forward_path = nx.shortest_path(logic_graph,edge[0],edge[1])
+#             reverse_path = nx.shortest_path(logic_graph,edge[1],edge[0])
+#             # getting product of rates along this path using embedded function
+#             forward_rates_prod = path_rates(forward_path,Q)
+#             reverse_rates_prod = path_rates(reverse_path,Q)
+#             Q[edge[0],edge[1]] = Q[edge[1],edge[0]] * (forward_rates_prod/reverse_rates_prod)
+#     if show:
+#         Qgraph = nx.MultiDiGraph(Q)
+#         nx.draw(Qgraph,pos = nx.spring_layout(Qgraph),with_labels=True)
+#     if not np.any(protected_rates):
+#         return(Q,Q_logical)
+#     else:
+#         return(Q)
 
-def resample_current(simulation_dict,freq,Vrev=0,voltage=False,update=False,keepnoise=True):
+def resample_simulation(simulation_dict,freq,Vrev=0,voltage=False,update=False,keepnoise=True):
     """
     A function primarily intended for changing sampling of an existing simulations,but
     has several other uses.
@@ -1908,3 +1941,814 @@ def resample_current(simulation_dict,freq,Vrev=0,voltage=False,update=False,keep
         simulation_dict.update({'p_t':resampled_pt})
         simulation_dict.update({'occ_t':resampled_occs})
         simulation_dict.update({'I_t':resampled_currs})
+        # does not return when updated
+
+def resample_current(current_dataframe,target_frequency):
+    """
+    resamples the current directly. For resampling occupancy and associated current,
+    see resample_simulation
+
+    """
+    times = current_dataframe.index
+    new_times = np.arange(0,times.max(),1/target_frequency)
+    resampled = np.zeros([np.size(new_times),current_dataframe.shape[1]])
+    for sweep in np.arange(current_dataframe.shape[1]):
+        interpolated_f = interp1d(times,current_dataframe.iloc[:,sweep].to_numpy(),fill_value='extrapolate') 
+        resampled[:,sweep] = interpolated_f(new_times)
+    resampled_current = pd.DataFrame(resampled,index = new_times)
+    
+    return(resampled_current)
+
+
+# =============================================================================
+# =============================================================================
+#  Unused, but tested code for model fitting
+# nB, expect NLP style deep learning probably would work better
+# and methods for hidden markov construction cna work acceptable in less complex model
+# =============================================================================
+# =============================================================================
+
+def model_constraints(model,constraint_matrix, fix_relationships=False):
+    """
+    Takes a model and constraint matrix to apply the following constraints:
+        1. Allow some rates to be set (not modified by MR)
+        2. Allow some rates to be set by MR
+        
+    A constraint matrix should be a square k x k array for k states, with entries:
+        0.5: fixed
+        1: to be set by MR
+    NB: concentration-dependent rates should be 'fixed'
+    
+    For easy creation of the constraint matrix:
+        constraint_matrix = np.zeros_like(model['rates'])
+        constraint_matrix.fill(0.5) - alternatively fill with 1
+        constraint_matrix[edgefrom,edgeto] = 1 - to set edgefrom,edgeto to be set by MR
+    """
+    Q = model['Q']
+    logic_graph = nx.MultiDiGraph(constraint_matrix)
+    for edge in logic_graph.edges():
+        # rates to be set by microscopic reversibility have weight 1, set have weight 0.5
+        if logic_graph.get_edge_data(edge[0],edge[1])[0]['weight'] ==1: # rate ij = rateji*(product rates of forward route/product rates of reverse route)
+            # where item[0] is source and itme[1] is target, getting shortest forward and reverse paths
+            forward_path = nx.shortest_path(logic_graph,edge[0],edge[1])
+            reverse_path = nx.shortest_path(logic_graph,edge[1],edge[0])
+            # getting product of rates along this path using embedded function
+            forward_rates_prod = path_rates(forward_path,Q)
+            reverse_rates_prod = path_rates(reverse_path,Q)
+            Q[edge[0],edge[1]] = Q[edge[1],edge[0]] * (np.divide(forward_rates_prod,reverse_rates_prod, where = (reverse_rates_prod>0)))
+    for row in range(0,np.size(Q,axis=0)): # Q matrix to convention - used by Q matrix method / CME
+            Q[row,row] = - np.nansum(Q[row])
+    model.update({'Q':Q})
+    rates = model['Q'].copy()
+    for row in range(0,np.size(rates,axis=0)): # generator convention
+            rates[row,row] = np.nan
+    rates[rates==0] = np.nan
+    model.update({'rates':rates})
+    return()
+
+def firefly_fit(data,Q,target_rates = False,baseline_length = 100*10**-3,parameter_spread = 1000,firefly_steps = 100,fix_relationships=False,**kwargs):
+    """
+    Alternative;y, see fittigration method below:
+    
+    For fittign stochastic models to data based on current
+    
+    Performs unsatisfactorily so wasnt used. Specifically, either diverged from data when the number of fireflies was low
+    (bestf ly pulled towards others), or when nubmer of fleis was large, swarm behaviour was better, local minima was hit and convergence did not occur.
+    
+    Varying behaviour of best fly may improve.
+    Alternative methods to constrain best fly were tried for best fly:
+        #   constraining its motion to be no further away from the data than the mean
+    
+        # movign randomly.
+        
+        # as well as placing best fly in superposition, mvoing towards or away from average flies, evaulating which is closer to data, and then taking that as best fly.
+    
+    Uses qs.simulate to fit a kinetic model to some data.
+    Data can either be simulated itself, or can be experimental
+        but should have a baseline at start
+    
+    data: either dataframe or simulation_dict object (as by qs.simulate)
+    Q: the model dict to use
+    target_rates: the rates to vary. If False (Default), then all rates may be varied (except diag)
+        Otherwise, a kxk matrix should be provided where:
+            0.5 is a rate that can be varied
+            1 is a rate to be set by MR
+            2 is a rate that is set within Q that cannot be varied
+        - For easy creation:
+            target_rates = zeros_like(Q['Q'])
+            and set as desired.
+             
+    baseline_length: length of the baseline from t=0, from which to determine how to layer noise onto the current
+    parameter_spread: determiens the number of uniform samples for each rate constant. The larger thsi value is, the slower the process will take, but mimima are more likely to be identified.
+    **kwargs: arguments for qs.simulate, which should attempt to match the profile of the current in data (i.e. in terms of when, and hwo long agonist_application is)
+        - does not need to include 'N' since currents are 
+    
+    fix_relationships (Bool): Default False. When True, accesses the relationship matrix
+        from the model dict and uses that to contrain relationships
+        --- see GluCoo17() model as an example of the format.
+        In brief:
+            allows relationships to be forced between constants.
+                e.g. setting rate 2,3 to a multiple of rate 1,2
+            The creation is fairly labourious, but allows convergence far more readily in model fitting.
+            it must be given as a k x k x 2 matrix, where dimensions 0 and 1 are one-hot encodings
+            of relationships in [k,k,0], and [k,k,1] contains mutliples.
+                To create k,k,1:
+                    kk_1 = np.ones_like(model['Q'])
+                    then assign mutliples - e.g. if rate 3,4 is 2 x rate 2,3,
+                    kk_1[3,4] = 2
+                    etc.
+                -To create kk_0:
+                    kk_0 = np.zeros_like(model['Q'])
+                    and the corresponding entries for 3,4 and 2,3 are arbitraliy 469
+                    kk_0[3,4], kk_0[2,3] = 469
+    
+    This procedure should ideally be performed multiple times, since the rates used are sampled from a uniform distribution
+    and different rates might converge to different minima (local or global)
+    """
+    if type(data) != pd.core.frame.DataFrame:
+        try:
+            data = current_to_DataFrame(data)
+        except Exception:
+            print("data must be a pandas DataFrame or simulation dict object")
+            return()
+    real_t_final = copy.copy(kwargs['t_final']) # used later - might need to do with other kwargs
+
+    # get noise amplitude to layer on
+    noise_amp = data.loc[data.index<baseline_length,:].abs().mean().mean()
+    # get data sampling rate and length
+    data_length = data.index.max()
+    data_sampling_rate = 1/data.index[1]
+    #normalise data - not true normalisation as still allows current of other sign
+    norm_data = data/(data.abs().max().max())
+    # norm data truncated for initial optimisation
+    ag_time = kwargs['agonist_time']
+    norm_data_trunc = (norm_data.loc[norm_data.index])#<ag_time+(data_length/5),:])
+    # want to resample the current so that timepoints correspond to sims below
+        # otherwise euclidean distance is exaggerated.
+    #norm_data_trunc = resample_current(norm_data_trunc,1/1e-04) 
+    # resampling useful when examine means if both resampled to same frequency
+
+    # changed from resampling current to a cut operation
+    #timepoints for resample
+    resample_bins = pd.cut(norm_data_trunc.index,np.arange(0,real_t_final,5e-05))
+    norm_data_trunc = norm_data_trunc.groupby(resample_bins).mean()
+    norm_data_trunc.index = np.arange(0,real_t_final,5e-05)[:-1]
+    # post agonist current
+    p_a_norm_current = norm_data_trunc[norm_data_trunc.index>=ag_time]
+
+    model_dict= Q.copy()
+    if not np.any(target_rates):
+        target_rates = np.zeros_like(Q['rates'])
+        target_rates.fill(0.5) # all rates may be varied
+        #np.fill_diagonal(target_rates,0)
+    # for all rates set as 1 (i.e. that can be varied)
+        # since the fastest sensible rate constant would be 100,000 (i.e. taking 1 sample at 100kHz to complete)
+        # for each rate that can vary, generate random numbers form uniform distribution (0,100000)
+
+    # generate the 1000 rate matrices, including the random rates
+        # if fix relationships, the proportion of the rates is maintained. This is more effieicnt, since it reduces random number generation.
+    if not fix_relationships:
+        rate_matrices = np.zeros([np.size(Q['rates'],0),np.size(Q['rates'],0),parameter_spread])
+        for row in np.arange(np.size(target_rates,0)):
+            for column in np.arange(np.size(target_rates,1)):
+                if target_rates[row,column] == 0.5: 
+                    #fill with random numbers if not set
+                    rate_matrices[row,column,:] = np.random.uniform(0,150000,parameter_spread)
+                else: #if set, fill with the set value
+                    rate_matrices[row,column,:] = Q['rates'][row,column]
+    else:
+        # find the number of unique relationships to vary together
+        # and the nubmer of unique rates to vary individually
+        if 'relationships' not in model_dict.keys():
+            print("Relationships array must be encoded in model. See help(model_constraints)")
+            return()
+        else:
+            counting = 0
+            rate_matrices = np.zeros([np.size(Q['rates'],0),np.size(Q['rates'],0),parameter_spread])
+            kk = model_dict['relationships']
+            encodings = np.unique(kk[:,:,0]) # get all unique one-hot encodings
+            encodings = np.delete(encodings,0) # remove the ones that can be varied
+            # get the number that can be individually varied
+                # which is nubmer of zeros in kk[:,:,0] - number of zero and negatives in model['Q']
+            # get number of individual constants that are additionally varied
+            # together, these are the constants that vary individually
+            n_to_change = len(encodings) # number of unique relationship encodings
+            # do single random draw for each relationship encoding and enforce multiples
+            for encoding in encodings:
+                random_draw = np.random.uniform(0,150000,parameter_spread)
+                relationships = np.stack((np.where(kk[:,:,0] == encoding))) # zipping where each col gives indexers
+                for relation in np.arange(np.shape(relationships)[1]):
+                    if target_rates[relationships[0,relation],relationships[1,relation]]==0.5: # if rate not set by user
+                        rate_matrices[relationships[0,relation],relationships[1,relation],:] =  random_draw * kk[relationships[0,relation],relationships[1,relation],1]
+                    else:
+                        rate_matrices[relationships[0,relation],relationships[1,relation],:] = Q['rates'][relationships[0,relation],relationships[1,relation]]
+            # find rates that vary individually and do necessary additional draws if they are not set
+            remaining_to_vary = np.stack((np.where((kk[:,:,0] == 0)& (model_dict['Q']>0))))
+            for item in np.arange(np.shape(remaining_to_vary)[1]):
+                if target_rates[remaining_to_vary[0,item],remaining_to_vary[1,item]] == 0.5:
+                    rate_matrices[remaining_to_vary[0,item],remaining_to_vary[1,item],:] = np.random.uniform(0,100000,parameter_spread)
+                    counting = counting+1
+                else:
+                    rate_matrices[remaining_to_vary[0,item],remaining_to_vary[1,item],:] = Q['rates'][remaining_to_vary[0,item],remaining_to_vary[1,item]]
+    # create the constraint matrix
+    constraint_matrix = copy.copy(target_rates)
+    # addition - so that non-real rates are 0.5 (i.e. set to value of 0)
+    constraint_matrix[Q['rates']==0]=0.5
+    
+    constraint_matrix[constraint_matrix == 2] = 0.5
+    np.fill_diagonal(constraint_matrix,0.5) # timesaver
+    params_fitting = {}
+    distances = [] # for stacking
+    print("Placing fireflies to identify minima for {} individually varying and {} sets of proportionally varying rates".format(counting,n_to_change))
+    for iteration in tqdm(np.arange(parameter_spread)):
+        model_iteration = model_dict.copy()
+        model_iteration.update({'Q':rate_matrices[:,:,iteration]})
+        # enforces MR in Q and updates the rates to match Q, enforcing necessary conventions
+        model_constraints(model_iteration, constraint_matrix)
+        # simulate using that model for first 10th of time with matching noise_amplitude layered over
+        # this should give some more power to rise times of the current, which tend to be faster, but also aids in efficiency
+        kwargs['noise_sd'] = noise_amp
+        kwargs['t_final'] = real_t_final
+        kwargs['n_sweeps'] = 10
+        kwargs['interval'] = 5e-05
+        kwargs['N'] = 1000
+        kwargs['Q'] = model_iteration
+        iteration_output = simulate(show_progress=False,graph=False,**kwargs) # calling main simulate function
+        #plt.close('all')
+        iteration_current = current_to_DataFrame(iteration_output)
+        # normalise the current
+        norm_iteration_current = (iteration_current/(iteration_current.abs().max().max()))
+        # resample it to match that of the truncated data
+        # changed to a cut operation
+        #norm_iteration_current = resample_current(norm_iteration_current,1/1e-04)
+        bins_curr = pd.cut(norm_iteration_current.index,np.arange(0,real_t_final,5e-05))
+        norm_iteration_current = norm_iteration_current.groupby(bins_curr).mean()
+        norm_iteration_current.index = np.arange(0,real_t_final,5e-05)[:-1]
+        # for rmse and L2 calculation, perform on the current AFTER baseline
+            # so that are more sensitive
+        p_a_iteration_current = norm_iteration_current[norm_iteration_current.index>=ag_time]
+        #rmse = mean_squared_error(p_a_norm_current, p_a_iteration_current,squared=True)
+        euc_distance = np.linalg.norm(p_a_norm_current.mean()-p_a_iteration_current.mean())
+        #if euc_distance < 0.1:
+            # a plausible current at this point, model should be less than 10% different in mean to the mean of the current during n
+        that_iteration = model_iteration.copy()
+        that_iteration.update({'distance':euc_distance})
+        #that_iteration.update({'rmse':rmse})
+        that_iteration.update({'model':iteration_output})
+        params_fitting.update({str(iteration):that_iteration})
+        distances.append(euc_distance)
+    print("Performing firefly steps. Runtime approximately firefly_steps * time for initial placement")
+    # do something more efficient for each firefly step - could be a while loop
+    brightest_fly = []
+    best_fly = {}
+    mean_luminance =[]
+    max_luminance = []
+    for step in tqdm(np.arange(firefly_steps)):
+        # get somenew random rate matrices by the same rules as previously
+        if not fix_relationships:
+            random_rates = copy.copy(rate_matrices) # each entry in dimension 2 is a firefly
+            for row in np.arange(np.size(target_rates,0)):
+                for column in np.arange(np.size(target_rates,1)):
+                    if target_rates[row,column] == 0.5: 
+                        #fill with random numbers if not set
+                        random_rates[row,column,:] = np.random.uniform(0,150000,parameter_spread)
+                    else: #if set, fill with the set value
+                        random_rates[row,column,:] = Q['rates'][row,column]
+        else:
+            #instances of no specified relationships will be caught earlier
+            random_rates = np.zeros([np.size(Q['rates'],0),np.size(Q['rates'],0),parameter_spread]) # one for each firefly in second dimension
+            kk = model_dict['relationships']
+            encodings = np.unique(kk[:,:,0]) # get all unique one-hot encodings
+            encodings = np.delete(encodings,0) 
+            for encoding in encodings:
+                random_draw = np.random.uniform(0,150000,parameter_spread)
+                relationships = np.stack((np.where(kk[:,:,0] == encoding))) # zipping where each col gives indexers
+                for relation in np.arange(np.shape(relationships)[1]):
+                    if target_rates[relationships[0,relation],relationships[1,relation]]==0.5: # if rate not set by user
+                        random_rates[relationships[0,relation],relationships[1,relation],:] =  random_draw * kk[relationships[0,relation],relationships[1,relation],1]
+                    else:
+                        random_rates[relationships[0,relation],relationships[1,relation],:] = Q['rates'][relationships[0,relation],relationships[1,relation]]
+            # find rates that vary individually and do necessary additional draws if they are not set
+            remaining_to_vary = np.stack((np.where((kk[:,:,0] == 0)& (model_dict['Q']>0))))
+            for item in np.arange(np.shape(remaining_to_vary)[1]):
+                if target_rates[remaining_to_vary[0,item],remaining_to_vary[1,item]] == 0.5:
+                    random_rates[remaining_to_vary[0,item],remaining_to_vary[1,item],:] = np.random.uniform(0,100000,parameter_spread)
+                else:
+                    random_rates[remaining_to_vary[0,item],remaining_to_vary[1,item],:] = Q['rates'][remaining_to_vary[0,item],remaining_to_vary[1,item]]
+            # random rates is fine
+
+    ###### ---- firefly steps
+        dists = distances
+        # define luminance for each firefly as 1/1+(distance from data^2)
+        luminances = 1/(1+(np.array(dists)**2)) # Tilahum and Choon-Ong point out that this is faster than using exponential term
+        mean_luminance.append(luminances.mean())
+        max_luminance.append(np.max(luminances))
+        if fix_relationships: # annoying to have here and then repeated
+            n_dimensions = len(encodings) + np.size(remaining_to_vary,1)
+            relationship_rates = np.zeros([n_dimensions,parameter_spread])
+    
+        # for each firefly, rates for pairwise distances
+        for firefly in np.arange(parameter_spread):
+            if fix_relationships:
+                # perform dimensionality reduction for fireflies
+                # make it a vector in n_dimensions for number of unique rates
+                for item, encoding in enumerate(encodings):
+                    relationships = np.stack((np.where(kk[:,:,0] == encoding))) # zipping where each col gives indexers
+                    relationship_rates[item,firefly] = random_rates[relationships[0,0],relationships[1,0],firefly]/(kk[relationships[0,0],relationships[0,1],1]) # get base, unmultiplied rate
+                for item in np.arange(np.size(remaining_to_vary,1)):
+                    relationship_rates[item+len(encodings),firefly] = random_rates[remaining_to_vary[0,item],remaining_to_vary[1,item],firefly]
+
+                # distances remains the same, but pairwise does not
+        pairwise_distances = np.zeros([parameter_spread,parameter_spread])
+        #if fix_relationships:
+        #    pairwise_distances = np.zeros([parameter_spread,parameter_spread])
+        #    for m1,m2 in combinations(np.arange(parameter_spread),2):
+                # get pseudo-symmetric matrix of distances between rate matrices
+        #        pairwise_distances[m1,m2] = np.linalg.norm(relationship_rates[:,m1] - relationship_rates[:,m2])
+        #        pairwise_distances[m2,m1] = np.linalg.norm(relationship_rates[:,m2] - relationship_rates[:,m1])
+        #else:
+        for m1,m2 in combinations(np.arange(parameter_spread),2):
+            # get pseudo-symmetric matrix of distances between rate matrices
+            pairwise_distances[m1,m2] = np.linalg.norm(rate_matrices[:,:,m1] - rate_matrices[:,:,m2])
+            pairwise_distances[m2,m1] = np.linalg.norm(rate_matrices[:,:,m2] - rate_matrices[:,:,m1])
+
+    # define attraction of each fly, which is proportional to the distance between them * their distance from origin (brightness)
+        attraction = pairwise_distances*luminances #where attraction is luminance[item]*pairwise_distances[row,column]
+        # move each firefly towards brightest it can see - except the brightest fly
+        for firefly in np.arange(parameter_spread):
+            if luminances[firefly] == np.max(luminances): # if closest fit / brightest
+                brightest_fly.append(firefly)
+                # and then have to get the correct direction to move it
+                    # which annoyingly is a property of all independent rates
+                        # could duplicate fly and have move both towards and away
+                            # and then cull the one that is shitter when update the system
+                        # i'm chill with that.
+                # for best firefly, superpose it as moving in both directions
+                best_fly_neg = rate_matrices[:,:,firefly] - ((np.multiply(np.random.rand(),random_rates[:,:,firefly])))
+                best_fly_pos = rate_matrices[:,:,firefly] + ((np.multiply(np.random.rand(),random_rates[:,:,firefly])))
+                
+            else:
+                signs = np.subtract(rate_matrices[:,:,np.where(attraction[firefly,:]==np.max(attraction[firefly,:]))[0][0]],rate_matrices[:,:,firefly])
+                signs[signs<0] = -1
+                signs[signs>0] = 1
+                signs[Q['Q']==0]=0 # fix for non-real rates, hopefully
+                # get direction to move it towards the brightest fly it perceives
+                # move the fly towards its most attractive partner
+                
+                # could just have a minus term instead for the best fly
+                    # make anything < 0
+                    # how do we deal with that: make 1? (not zero though) because we know they are real rates
+                    
+                # idea would be to add the distance to all rates corresponding to that relationship
+                    # e.g. + kk[1] *i , where kk1 is the indiciator
+                            # where a = random (0,1) * signs, and e = random_rates
+                rate_matrices[:,:,firefly] = rate_matrices[:,:,firefly] + (attraction[firefly,np.where(attraction[firefly,:]==np.max(attraction[firefly,:]))[0][0]]) + (np.multiply(np.multiply(np.random.rand(),signs),random_rates[:,:,firefly]))
+                rate_matrices[:,:,firefly][rate_matrices[:,:,firefly]<0] = 1 # make 1, not zero
+                rate_matrices[:,:,firefly][[Q['Q']==0]]=0 # fixing change to non-real rates
+        best_fly_neg[best_fly_neg<0] =1
+        best_fly_neg[[Q['Q']==0]]=0
+        best_fly_pos[best_fly_pos<0] =1
+        best_fly_pos[[Q['Q']==0]]=0
+        # need to remember to find better of neg or pos firefly and replace it in rate matrices
+            # above, do both as single style, since attraction is single value
+            # but then new rates of a given firefly must be multiplied out for fixed, but not for unfixed
+
+            # new position = old position + attraction + sign-adjusted random number * random rates
+            
+            
+            # place limit on sum(relatinships) =  for max(kk[:,:,1] * rate = 150,000)
+            # would also be good to move the best firefly only in a better direction
+            
+            # guess will have to have rate-by-rate refinement too.
+            
+            # then could do with var after to illustrate point about hwo rates woule
+                # have to change / whether they could
+            
+         
+    # re-perform the simulations
+        #distances = []
+        for firefly in np.arange(parameter_spread):
+            if firefly == 0:
+                distances = []
+            model_iteration = model_dict.copy()
+            model_iteration.update({'Q':rate_matrices[:,:,firefly]})
+            if firefly == brightest_fly[-1]:
+                #--- pos best fly
+                model_iteration.update({'Q':best_fly_pos})
+                # enforces MR in Q and updates the rates to match Q, enforcing necessary conventions
+                model_constraints(model_iteration, constraint_matrix)
+                # simulate using that model for first 10th of time with matching noise_amplitude layered over
+                # this should give some more power to rise times of the current, which tend to be faster, but also aids in efficiency
+                kwargs['noise_sd'] = noise_amp
+                kwargs['t_final'] = real_t_final
+                kwargs['n_sweeps'] = 10
+                kwargs['interval'] = 5e-05
+                kwargs['N'] = 1000
+                kwargs['Q'] = model_iteration
+                iteration_output_pos = simulate(show_progress=False,graph=False,**kwargs) # c
+                #if firefly == np.where(luminances == luminances.max())[0][0]:
+                #    best_fly[:,:,step] = iteration_output['conditions']['Q']['Q']
+                
+                iteration_current_pos = current_to_DataFrame(iteration_output)
+                # normalise the current
+                norm_iteration_current_pos = (iteration_current/(iteration_current.abs().max().max()))
+                # resample it to match that of the truncated data
+                # changed to a cut operation
+                #norm_iteration_current = resample_current(norm_iteration_current,1/1e-04)
+                bins_curr_pos = pd.cut(norm_iteration_current_pos.index,np.arange(0,real_t_final,5e-05))
+                norm_iteration_current_pos = norm_iteration_current_pos.groupby(bins_curr_pos).mean()
+                norm_iteration_current_pos.index = np.arange(0,real_t_final,5e-05)[:-1]
+                # for rmse and L2 calculation, perform on the current AFTER baseline
+                    # so that are more sensitive
+                p_a_iteration_current_pos = norm_iteration_current_pos[norm_iteration_current_pos.index>=ag_time]
+                #rmse = mean_squared_error(p_a_norm_current, p_a_iteration_current,squared=True)
+                euc_distance_pos = np.linalg.norm(p_a_norm_current.mean()-p_a_iteration_current_pos.mean())
+                #--- neg best fly
+                model_iteration.update({'Q':best_fly_neg})
+                model_constraints(model_iteration, constraint_matrix)
+                # simulate using that model for first 10th of time with matching noise_amplitude layered over
+                # this should give some more power to rise times of the current, which tend to be faster, but also aids in efficiency
+                kwargs['noise_sd'] = noise_amp
+                kwargs['t_final'] = real_t_final
+                kwargs['n_sweeps'] = 10
+                kwargs['interval'] = 5e-05
+                kwargs['N'] = 1000
+                kwargs['Q'] = model_iteration
+                iteration_output = simulate(show_progress=False,graph=False,**kwargs) # c
+                #if firefly == np.where(luminances == luminances.max())[0][0]:
+                #    best_fly[:,:,step] = iteration_output['conditions']['Q']['Q']
+                
+                iteration_current = current_to_DataFrame(iteration_output)
+                # normalise the current
+                norm_iteration_current = (iteration_current/(iteration_current.abs().max().max()))
+                # resample it to match that of the truncated data
+                # changed to a cut operation
+                #norm_iteration_current = resample_current(norm_iteration_current,1/1e-04)
+                bins_curr = pd.cut(norm_iteration_current.index,np.arange(0,real_t_final,5e-05))
+                norm_iteration_current = norm_iteration_current.groupby(bins_curr).mean()
+                norm_iteration_current.index = np.arange(0,real_t_final,5e-05)[:-1]
+                # for rmse and L2 calculation, perform on the current AFTER baseline
+                    # so that are more sensitive
+                p_a_iteration_current = norm_iteration_current[norm_iteration_current.index>=ag_time]
+                #rmse = mean_squared_error(p_a_norm_current, p_a_iteration_current,squared=True)
+                euc_distance_neg = np.linalg.norm(p_a_norm_current.mean()-p_a_iteration_current.mean()) 
+                if euc_distance_neg<euc_distance_pos:
+                    ## here, just abotu to update the distances and wdecide which is best model
+                    # then need to give the instance for other flies.
+                    best_fly.update({str(step):iteration_output})
+                    distances.append(euc_distance)
+                    rate_matrices[:,:,firefly] = best_fly_neg
+                else:
+                    best_fly.update({str(step):iteration_output_pos})
+                    distances.append(euc_distance_pos)
+                    rate_matrices[:,:,firefly] = best_fly_pos
+            else:
+                model_iteration = model_dict.copy()
+                model_iteration.update({'Q':rate_matrices[:,:,firefly]})
+                # enforces MR in Q and updates the rates to match Q, enforcing necessary conventions
+                model_constraints(model_iteration, constraint_matrix)
+                # simulate using that model for first 10th of time with matching noise_amplitude layered over
+                # this should give some more power to rise times of the current, which tend to be faster, but also aids in efficiency
+                kwargs['noise_sd'] = noise_amp
+                kwargs['t_final'] = real_t_final
+                kwargs['n_sweeps'] = 10
+                kwargs['interval'] = 5e-05
+                kwargs['N'] = 1000
+                kwargs['Q'] = model_iteration
+    
+                iteration_output = simulate(show_progress=False,graph=False,**kwargs) # c
+                # if firefly == np.where(luminances == luminances.max())[0][0]:
+                #     best_fly[:,:,step] = iteration_output['conditions']['Q']['Q'][:,:,]
+                
+                
+                iteration_current = current_to_DataFrame(iteration_output)
+                # normalise the current
+                norm_iteration_current = (iteration_current/(iteration_current.abs().max().max()))
+                # resample it to match that of the truncated data
+                # changed to a cut operation
+                #norm_iteration_current = resample_current(norm_iteration_current,1/1e-04)
+                bins_curr = pd.cut(norm_iteration_current.index,np.arange(0,real_t_final,5e-05))
+                norm_iteration_current = norm_iteration_current.groupby(bins_curr).mean()
+                norm_iteration_current.index = np.arange(0,real_t_final,5e-05)[:-1]
+                # for rmse and L2 calculation, perform on the current AFTER baseline
+                    # so that are more sensitive
+                p_a_iteration_current = norm_iteration_current[norm_iteration_current.index>=ag_time]
+                #rmse = mean_squared_error(p_a_norm_current, p_a_iteration_current,squared=True)
+                euc_distance = np.linalg.norm(p_a_norm_current.mean()-p_a_iteration_current.mean())
+                #update distances
+                distances.append(euc_distance)
+            dists = distances
+            if step == firefly_steps: # following final update, calculate final
+                luminances = 1/(1+(np.array(dists)**2)) # Tilahum and Choon-Ong point out that this is faster thanusing exponential term
+                mean_luminance.append(luminances.mean())
+                max_luminance.append(np.max(luminances))
+            #update distances
+            #distances.append(euc_distance)
+    return(mean_luminance,max_luminance,best_fly,brightest_fly)
+
+def fittigration(data,Q,target_rates = False,baseline_length = 100*10**-3,parameter_spread = 1000,steps = 100,fix_relationships=False,max_rate = 1.5e5,**kwargs):
+    """
+    
+    Using stochastic simulations to fit model to data.
+    Was not satisfied with results, so unused. Varying model averaging and convergence behaviour may improve.
+        # or using Q matrix method - but then cannot asses variance.
+    Mya perform well for simpler models (I tried with 17 dimensions - i.e. rate constants/ goruped rate constants that may change)
+    
+    Idea is to integrate until time t, so get a value of goodness of fit for each time point
+    Then to associate each rate with which integrals it's most associated
+    Which means varying one at a time, or groups
+    
+    Using evolutioanry process to fit rates of specified mechanism using area
+    under curve at time t (where AUC obtained by trapezium rule), and minimising the 
+    distance between the model fit  and the data using the differences of their AUC
+    
+    We thought this approach woudl allow us to account for non-stationary nature of the chain
+    - i.e. that some time cosntants contribute minimally at certain I(t). And avoid sequence-dependent problems
+    associated with varyign rates/grouped rates individually
+    
+    Microscopic reversibility is imposed, and normalised currents are used.
+    
+    Args::
+    Data =dataframe or model dict of the data to which a model is fitted
+    Q = the dictionary containiing the relationships and rates/ Q matrix of the model - structed as included examples
+        # thsi can contian relationships between rates that facilitate constraints
+    target_rates (optional): matrix specifyign which rates are set by user, which canbe varied, and whicch should be set by MR
+    parameter_spread: the number of models to run and refine at each iteration
+    steps: the number of iterations
+    fix_relationships: when true and a relationships matrix provided (see GluCoo17 for example), maintains relationships between rate constants
+    max_rate: the maximum rate allowed for a given rate cosntant. Here  = 150,000s^-1
+    ** kwargs: fir the simulation. Should match the data in tersm fo when agonist applied, decya/rise time of stimulus, concentration of agonist etc.
+    
+    
+    """
+    if type(data) != pd.core.frame.DataFrame:
+        try:
+            data = current_to_DataFrame(data)
+        except Exception:
+            print("data must be a pandas DataFrame or simulation dict object")
+            return()
+    real_t_final = copy.copy(kwargs['t_final']) # used later - might need to do with other kwargs
+
+    # get noise amplitude to layer on
+    noise_amp = data.loc[data.index<baseline_length,:].abs().mean().mean()
+    # get data sampling rate and length
+    data_length = data.index.max()
+    data_sampling_rate = 1/data.index[1]
+    #normalise data - not true normalisation as still allows current of other sign
+    norm_data = data/(data.abs().max().max())
+    # norm data truncated for initial optimisation
+    ag_time = kwargs['agonist_time']
+    norm_data_trunc = (norm_data.loc[norm_data.index])#<ag_time+(data_length/5),:])
+    # want to resample the current so that timepoints correspond to sims below
+        # otherwise euclidean distance is exaggerated.
+    #norm_data_trunc = resample_current(norm_data_trunc,1/1e-04) 
+    # resampling useful when examine means if both resampled to same frequency
+
+    # changed from resampling current to a cut operation
+    #timepoints for resample
+    resample_bins = pd.cut(norm_data_trunc.index,np.arange(0,real_t_final,5e-05))
+    norm_data_trunc = norm_data_trunc.groupby(resample_bins).mean()
+    norm_data_trunc.index = np.arange(0,real_t_final,5e-05)[:-1]
+    # post agonist current
+    p_a_norm_current = norm_data_trunc[norm_data_trunc.index>=ag_time]
+    #integrate to time t
+    data_int_norm = trapesium_t(p_a_norm_current)
+
+    model_dict= Q.copy()
+    if not np.any(target_rates):
+        target_rates = np.zeros_like(Q['rates'])
+        target_rates.fill(0.5) # all rates may be varied
+        #np.fill_diagonal(target_rates,0)
+    # for all rates set as 1 (i.e. that can be varied)
+        # since the fastest sensible rate constant would be 100,000 (i.e. taking 1 sample at 100kHz to complete)
+        # for each rate that can vary, generate random numbers form uniform distribution (0,100000)
+
+    # generate the 1000 rate matrices, including the random rates
+        # if fix relationships, the proportion of the rates is maintained. This is more effieicnt, since it reduces random number generation.
+    if not fix_relationships:
+        rate_matrices = np.zeros([np.size(Q['rates'],0),np.size(Q['rates'],0),parameter_spread])
+        for row in np.arange(np.size(target_rates,0)):
+            for column in np.arange(np.size(target_rates,1)):
+                if target_rates[row,column] == 0.5: 
+                    #fill with random numbers if not set
+                    rate_matrices[row,column,:] = np.random.uniform(0,max_rate,parameter_spread)
+                else: #if set, fill with the set value
+                    rate_matrices[row,column,:] = Q['rates'][row,column]
+        # generate list of rate indexers - too add
+    else:
+        # find the number of unique relationships to vary together
+        # and the nubmer of unique rates to vary individually
+        if 'relationships' not in model_dict.keys():
+            print("Relationships array must be encoded in model. See help(model_constraints)")
+            return()
+        else:
+            counting = 0
+            rate_matrices = np.zeros([np.size(Q['rates'],0),np.size(Q['rates'],0),parameter_spread])
+            kk = model_dict['relationships']
+            encodings = np.unique(kk[:,:,0]) # get all unique one-hot encodings
+            encodings = np.delete(encodings,0) # remove the ones that can be varied
+            # get the number that can be individually varied
+                # which is nubmer of zeros in kk[:,:,0] - number of zero and negatives in model['Q']
+            # get number of individual constants that are additionally varied
+            # together, these are the constants that vary individually
+            n_to_change = len(encodings) # number of unique relationship encodings
+            # do single random draw for each relationship encoding and enforce multiples
+            
+            rate_indexers =[]
+            
+            for encoding in encodings:
+                random_draw = np.random.uniform(0,max_rate,parameter_spread)
+                relationships = np.stack((np.where(kk[:,:,0] == encoding))) # zipping where each col gives indexer
+                # getting a single rate indexer for each encoding - used later
+                rate_indexers.append(np.append(np.append(encoding,relationships[:,0]),kk[relationships[0,1],relationships[1,1],1]).astype(int))
+                for relation in np.arange(np.shape(relationships)[1]):
+                    if target_rates[relationships[0,relation],relationships[1,relation]]==0.5: # if rate not set by user
+                        rate_matrices[relationships[0,relation],relationships[1,relation],:] =  random_draw * kk[relationships[0,relation],relationships[1,relation],1]
+                    else:
+                        rate_matrices[relationships[0,relation],relationships[1,relation],:] = Q['rates'][relationships[0,relation],relationships[1,relation]]
+                    
+            # find rates that vary individually and do necessary additional draws if they are not set
+            remaining_to_vary = np.stack((np.where((kk[:,:,0] == 0)& (model_dict['Q']>0))))
+            for item in np.arange(np.shape(remaining_to_vary)[1]):
+                rate_indexers.append(np.append(np.append(0,remaining_to_vary[:,item]),1).astype(int)) # given encoding of 0 in list of rate indexers
+                if target_rates[remaining_to_vary[0,item],remaining_to_vary[1,item]] == 0.5:
+                    rate_matrices[remaining_to_vary[0,item],remaining_to_vary[1,item],:] = np.random.uniform(0,max_rate,parameter_spread)
+                    counting = counting+1
+                else:
+                    rate_matrices[remaining_to_vary[0,item],remaining_to_vary[1,item],:] = Q['rates'][remaining_to_vary[0,item],remaining_to_vary[1,item]]
+    # create the constraint matrix
+    constraint_matrix = copy.copy(target_rates)
+    # addition - so that non-real rates are 0.5 (i.e. set to value of 0)
+    constraint_matrix[Q['rates']==0]=0.5
+        
+    constraint_matrix[constraint_matrix == 2] = 0.5
+    np.fill_diagonal(constraint_matrix,0.5) # timesaver
+    params_fitting = {}
+    differences = np.zeros([parameter_spread,np.size(p_a_norm_current,0)])
+    print("Initialising models to identify minima for {} individually varying and {} sets of proportionally varying rates".format(counting,n_to_change))
+    for iteration in tqdm(np.arange(parameter_spread)):
+        model_iteration = model_dict.copy()
+        model_iteration.update({'Q':rate_matrices[:,:,iteration]})
+        # enforces MR in Q and updates the rates to match Q, enforcing necessary conventions
+        model_constraints(model_iteration, constraint_matrix)
+        # simulate using that model for first 10th of time with matching noise_amplitude layered over
+        # this should give some more power to rise times of the current, which tend to be faster, but also aids in efficiency
+        kwargs['noise_sd'] = noise_amp
+        kwargs['t_final'] = real_t_final
+        kwargs['n_sweeps'] = 10
+        kwargs['interval'] = 5e-05
+        kwargs['N'] = 1000
+        kwargs['Q'] = model_iteration
+        iteration_output = simulate(show_progress=False,graph=False,**kwargs) # calling main simulate function
+        #plt.close('all')
+        iteration_current = current_to_DataFrame(iteration_output)
+        # normalise the current to its maximum (i.e. of all sweeps)
+        norm_iteration_current = (iteration_current/(iteration_current.abs().max().max()))
+        # resample it to match that of the truncated data
+        # changed to a cut operation
+        #norm_iteration_current = resample_current(norm_iteration_current,1/1e-04)
+        bins_curr = pd.cut(norm_iteration_current.index,np.arange(0,real_t_final,5e-05))
+        norm_iteration_current = norm_iteration_current.groupby(bins_curr).mean()
+        norm_iteration_current.index = np.arange(0,real_t_final,5e-05)[:-1]
+        # for rmse and L2 calculation, perform on the current AFTER baseline
+            # so that are more sensitive
+        p_a_iteration_current = norm_iteration_current[norm_iteration_current.index>=ag_time]
+        #rmse = mean_squared_error(p_a_norm_current, p_a_iteration_current,squared=True)
+        #euc_distance = np.linalg.norm(p_a_norm_current.mean()-p_a_iteration_current.mean())
+        p_a_int_norm_model = trapesium_t(p_a_iteration_current)
+        p_a_int_diff = data_int_norm - p_a_int_norm_model
+        #if euc_distance < 0.1:
+            # a plausible current at this point, model should be less than 10% different in mean to the mean of the current during n
+        that_iteration = model_iteration.copy()
+        that_iteration.update({'int_diff':p_a_int_diff})
+        #that_iteration.update({'distance':euc_distance})
+        #that_iteration.update({'rmse':rmse})
+        that_iteration.update({'model':iteration_output})
+        params_fitting.update({iteration:that_iteration})
+        #distances.append(euc_distance)
+        differences[iteration,:] = p_a_int_diff
+        params_fitting.update({iteration:that_iteration})
+        
+    # get the rates accounting for differences between best and not best models
+    step_best = {}
+    models = params_fitting
+    best3 = np.zeros([np.size(Q['rates'],0),np.size(Q['rates'],1),3])
+    not_best3 = np.zeros([np.size(Q['rates'],0),np.size(Q['rates'],1),parameter_spread-3])
+    # preallocate new_rates
+    new_rates = np.zeros([np.size(Q['rates'],0),np.size(Q['rates'],1),parameter_spread,np.size(differences,1)])
+    print("Optimising {} models over {} steps".format(parameter_spread,steps))
+    step_diffs = []
+    for step in tqdm(np.arange(steps)):
+        #step_diffs.append(np.abs(differences).mean().mean())
+        step_diffs.append(np.abs(differences).mean(axis=1).min()) # tracking the time-avg fit of best model at each gen
+        if step_diffs[-1] == np.min(step_diffs):
+            best_model_num = np.where(np.abs(differences).mean(axis=1) == np.abs(differences).mean(axis=1).min())[0][0]
+            step_best.update({step:models[best_model_num]})
+        for timestep in np.arange(np.size(differences,1)):
+            if not np.any(differences[:,timestep] == 0):
+                best_3 = np.argsort(np.abs(differences[:,timestep]))[:3]
+                # indices used for differences
+                for modelnum, model in enumerate(best_3):
+                    best3[:,:,modelnum] = models[model]['Q'][:,:]
+                best3_avg = np.mean(best3,axis=2) # take mean of three best models ------- could be changed for sensitivity
+                remaining_models = models.keys() - set(best_3)
+                for item, value in enumerate(remaining_models):
+                    not_best3[:,:,item] = models[value]['Q'][:,:]
+                not_best3_avg = np.mean(not_best3,axis=2) #### take mean of worst --------- might be made mroe sensitive by taking next 3 or etc. Beacuse of uniform sampling, avg should be approx 1/2 parameter search space I guess
+                #rate_diffs = np.subtract(best3_avg,not_best3_avg)
+                # get whichever closest to the best 3 models: min (=0), max (user set), or mean (worst models)
+                    # has to be done for each rate/group of rates individually - for multiplicative rates, shouldn't matter
+                    # might make sense to generate indexers of unique rates to vary earlier
+                    
+                # establish whether reamining models, 0, or max rate is closer for each rate/group of rates using rate_indexers (see earlier)
+                # multiple of relationship expresses as 4th entry
+                for rate_indexer in rate_indexers:
+                    rate_guess = best3_avg[rate_indexer[1],rate_indexer[2]]/rate_indexer[3] # get the rate/ rate multiple
+                    remaining_guess = not_best3_avg[rate_indexer[1],rate_indexer[2]]/rate_indexer[3]
+                    # 0 is min, so rate_guess - 0 = rate guess, and then to find the closest to best:
+                    # if 0, then 0 is closest to best rate, 1 = remaining is closest,2= max closest
+                    closest = np.array([0,remaining_guess,max_rate][np.argmin(np.array([rate_guess,rate_guess-remaining_guess,max_rate]))])
+                    # draw the new random rate from gaussian with mean = mean(rate_guess,closest)
+                    # and sd = np.abs(rate_guess-closest) # this could be tuned, but should be adequate... though 68% of guesses will be in this interval
+                    new_rates[rate_indexer[1],rate_indexer[2],:,timestep] = np.random.normal(np.mean(np.array([rate_guess,closest])),np.abs(rate_guess-closest),parameter_spread)
+                    # and populate the matrix as appropriate for multiples
+                    if rate_indexer[0] !=0: # i.e. is a relationship encoding
+                        relationships = np.stack((np.where(kk[:,:,0] ==rate_indexer[0]))) # zipping where each col gives indexer
+                        for relation in np.arange(np.shape(relationships)[1]):
+                            if target_rates[relationships[0,relation],relationships[1,relation]]==0.5: # if rate not set by user
+                                new_rates[relationships[0,relation],relationships[1,relation],:,timestep] =  new_rates[rate_indexer[1],rate_indexer[2],:,timestep] * kk[relationships[0,relation],relationships[1,relation],1]
+                            else:
+                                new_rates[relationships[0,relation],relationships[1,relation],:,timestep] = Q['rates'][relationships[0,relation],relationships[1,relation]]
+
+            else: # if the difference is 0 at that timestep, make that timepoint the previous model (to avoid spurious evolution)
+                for model in np.arange(parameter_spread):
+                    new_rates[:,:,model,timestep] = models[model]['Q'][:,:]
+        # get median rates from all timepoints for each model (using mean could bias towards timepoints where the chain is stationary)
+        median_new_rates = np.median(new_rates,axis=3)
+        # repeat the simulations with each new model, after constraining
+        new_params_fitting = {}
+        new_differences = np.zeros([parameter_spread,np.size(p_a_norm_current,0)])
+
+        for iteration in np.arange(parameter_spread):
+            model_iteration = model_dict.copy()
+            model_iteration.update({'Q':median_new_rates[:,:,iteration]})
+            # enforces MR in Q and updates the rates to match Q, enforcing necessary conventions
+            model_constraints(model_iteration, constraint_matrix)
+            # simulate using that model for first 10th of time with matching noise_amplitude layered over
+            # this should give some more power to rise times of the current, which tend to be faster, but also aids in efficiency
+            kwargs['noise_sd'] = noise_amp
+            kwargs['t_final'] = real_t_final
+            kwargs['n_sweeps'] = 10
+            kwargs['interval'] = 5e-05
+            kwargs['N'] = 1000
+            kwargs['Q'] = model_iteration
+            iteration_output = simulate(show_progress=False,graph=False,**kwargs) # calling main simulate function
+            #plt.close('all')
+            iteration_current = current_to_DataFrame(iteration_output)
+            # normalise the current to its maximum (i.e. of all sweeps)
+            norm_iteration_current = (iteration_current/(iteration_current.abs().max().max()))
+            # resample it to match that of the truncated data
+            # changed to a cut operation
+            #norm_iteration_current = resample_current(norm_iteration_current,1/1e-04)
+            bins_curr = pd.cut(norm_iteration_current.index,np.arange(0,real_t_final,5e-05))
+            norm_iteration_current = norm_iteration_current.groupby(bins_curr).mean()
+            norm_iteration_current.index = np.arange(0,real_t_final,5e-05)[:-1]
+            # for rmse and L2 calculation, perform on the current AFTER baseline
+                # so that are more sensitive
+            p_a_iteration_current = norm_iteration_current[norm_iteration_current.index>=ag_time]
+            #rmse = mean_squared_error(p_a_norm_current, p_a_iteration_current,squared=True)
+            #euc_distance = np.linalg.norm(p_a_norm_current.mean()-p_a_iteration_current.mean())
+            p_a_int_norm_model = trapesium_t(p_a_iteration_current)
+            p_a_int_diff = data_int_norm - p_a_int_norm_model
+            #if euc_distance < 0.1:
+                # a plausible current at this point, model should be less than 10% different in mean to the mean of the current during n
+            that_iteration = model_iteration.copy()
+            that_iteration.update({'int_diff':p_a_int_diff})
+            #that_iteration.update({'distance':euc_distance})
+            #that_iteration.update({'rmse':rmse})
+            that_iteration.update({'model':iteration_output})
+            new_params_fitting.update({iteration:that_iteration})
+            #distances.append(euc_distance)
+            new_differences[iteration,:] = p_a_int_diff
+            new_params_fitting.update({iteration:that_iteration})
+        #completing the loop
+        params_fitting = new_params_fitting.copy()
+        differences = new_differences
+        models=params_fitting.copy()
+    plt.plot(np.arange(steps),step_diffs)
+    return(step_best)
+
+
+def trapesium_t(current_dataframe):
+    """
+    Used by 'fittigration' method
+    """
+    x = current_dataframe.mean(axis=1).to_numpy()
+    y = current_dataframe.mean(axis=1).index
+    
+    s = np.zeros_like(y)
+    for timestep, time in enumerate(y):
+        #s[timestep] = np.sum((x[:timestep] - x[0]) * (y[:timestep] + y[0]) / 2)
+        s[timestep] = np.trapz(x[:timestep],y[:timestep]) ### faster 
+            
+    return(s)
