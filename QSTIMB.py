@@ -745,7 +745,7 @@ def Gillespie_walk(Q,t_final):
 # =============================================================================
 # binomial trial-based Tau leaping
 # =============================================================================
-def Tau_leap_Gillespie(N,Q,t_final,interval = 5e-05,voltage=0,Vrev = 0,iterations = 100,plot=True):
+def Tau_leap_Gillespie(N,Q,t_final,interval = 5e-05,voltage=0,Vrev = 0,iterations = 1,plot=True):
     """
     Classical method for Gillespie fixed Tau (interval) leaping - please read all notes
     
@@ -859,7 +859,7 @@ def Tau_leap_Gillespie(N,Q,t_final,interval = 5e-05,voltage=0,Vrev = 0,iteration
     else:
         return(t,p_t,occupancy)
 
-def agonist_application_tau_leap_Gillespie(N,Q,t_final,agonist_time,agonist_duration,first_conc,second_conc,interval = 5e-05,voltage=0,Vrev = 0,iterations = 100,plot=True,rise_time = 250*10**-6,decay_time = 300*10**-6):
+def agonist_application_tau_leap_Gillespie(N,Q,t_final,agonist_time,agonist_duration,first_conc,second_conc,interval = 5e-05,voltage=0,Vrev = 0,iterations = 1,plot=True,rise_time = 250*10**-6,decay_time = 300*10**-6):
     """
     Simulation of an agonist pulse using a fixed interval tau leaping approach.
     
@@ -1014,7 +1014,7 @@ def agonist_application_tau_leap_Gillespie(N,Q,t_final,agonist_time,agonist_dura
 
 #Can base on time for exhaustion of species as Cao, 2006...
 # including information we have about the rates
-def Weighted_adaptive_Tau_leap(N,Q,t_final,sampling = 5e-05,voltage=0,Vrev = 0,iterations = 100,plot=True):
+def Weighted_adaptive_Tau_leap(N,Q,t_final,sampling = 5e-05,voltage=0,Vrev = 0,iterations = 1,plot=True):
     """
     
     Performs a Gillespie walk with Tau leaping, where the step size (Tau) is
@@ -1150,7 +1150,7 @@ def Weighted_adaptive_Tau_leap(N,Q,t_final,sampling = 5e-05,voltage=0,Vrev = 0,i
     else:
         return(Tnew,p_t,occupancy)
     
-def Weighted_adaptive_agonist_application_Tau_leap(N,Q,t_final,agonist_time,agonist_duration,first_conc,second_conc,sampling = 5e-05,voltage=0,Vrev = 0,iterations = 100,plot=True,rise_time = 250*10**-6,decay_time = 300*10**-6):
+def Weighted_adaptive_agonist_application_Tau_leap(N,Q,t_final,agonist_time,agonist_duration,first_conc,second_conc,sampling = 5e-05,voltage=0,Vrev = 0,iterations = 1,plot=True,rise_time = 250*10**-6,decay_time = 300*10**-6):
     """
     Performs a Gillespie walk with Tau leaping for an agonist application
     , where the step size (Tau) is determined by the rates of each transition,
@@ -1960,6 +1960,206 @@ def resample_current(current_dataframe,target_frequency):
     return(resampled_current)
 
 
+
+
+# =============================================================================
+# =============================================================================
+# # Code for stability analysis using Monte Carlo Simulation
+# =============================================================================
+# =============================================================================
+import EpyPhys as epp
+from sklearn.metrics import r2_score
+import scipy.stats as sps
+def mechanistic_analysis(path,align=True):
+    """
+    performs stabilitly analysis for the parameter estimates
+
+    """
+    current = load_sim(path)
+    sweeps = current_to_DataFrame(current)
+    # first, plot mean vs ensemble for one curr
+    egfig,egaxs = plt.subplots()
+    sweeps.plot(color='dimgrey',legend=False,ax=egaxs)
+    sweeps.mean(axis=1).plot(color='midnightblue',ax=egaxs)
+    #egaxs.set_xlim(right=0.025)
+    plt.grid(False)
+    egaxs.set_facecolor('white')
+    epp.add_scalebar(egaxs)
+    plt.tight_layout()
+    
+    # plot mean state occupancy over time
+    occfig,occaxs = plt.subplots()
+    occaxs.set_prop_cycle(mycycle)
+    for state in np.arange(np.shape(current['p_t'])[0]):
+        occaxs.plot(current['t'],np.mean(current['p_t'][state][:,:],axis=1),label = "{}".format(state))
+    occaxs.legend(fontsize=5,loc= 6,bbox_to_anchor=(1.0,0.5))
+    occaxs.set_xlabel("t (s)")
+    occaxs.set_ylabel("Probability")
+    #plt.grid(False)
+    #occaxs.set_facecolor("white")
+    occaxs.spines['left'].set_color('black')
+    occaxs.spines['bottom'].set_color('black')
+    plt.tight_layout()
+
+    # do the optimisation - aligned and unaligned. Though when sweepnumber enough, fine
+    # have to assess the noise manually for myself and jot down values
+    try:
+        sweepno,sweepthresh,binno,binthresh = epp.NSFA_optimal(sweeps, alignment=align,optim_binsize=True,batchsize=16)
+    except ValueError:
+        sweepno,sweepthresh,binno,binthresh = np.nan,np.nan,np.nan,np.nan # catch for when none identified.
+    return(sweepno,sweepthresh,binno,binthresh)
+def mechanistic_analysis_2(path,n_bins,n_sweeps,align=True):
+    """
+    performs skew analysis NSFA using optimum parameters and retrieves the 
+    ground truth Po-Peak as sum(Po) where |I| is max.
+    """
+
+    current = load_sim(path)
+    sweeps = current_to_DataFrame(current)
+    if np.isnan(n_bins):
+        n_bins = 10 # catch
+    if np.isnan(n_sweeps):
+        n_sweeps = sweeps.shape[1] # catch
+    N,i,Popen,y_mean,x,_,_,I_skew,var_skew = epp.NSFA(sweeps.iloc[:,:n_sweeps],num_bins=n_bins,skew_analysis=True,alignment=align,return_var=True)
+    # get ground truth Po
+    # get where current max
+    locmax = np.where(np.mean(np.abs(current['I_t']),axis=1) == np.max(np.mean(np.abs(current['I_t']),axis=1)))[0][0]
+    po_all = []
+    for item in current['conditions']['Q']['conducting states'].keys():
+        po_all.append(np.mean(current['p_t'][item],axis=1)[locmax]) # because not necessarily max in same location. Have to find where current is max
+    total_po = np.sum(po_all)
+    print("ground truth Po_peak was {}".format(np.round(total_po,4)))
+    
+    occs = []
+    weighting = []
+    curr = []
+    
+    for item, value in enumerate(current['conditions']['Q']['conducting states'].keys()):
+        occs.append(current['p_t'].mean(axis=2)[value].sum())
+    for item in occs:
+        weighting.append(item/np.sum(occs))
+    for item, value in enumerate(current['conditions']['Q']['conducting states'].keys()):
+        curr.append(weighting[item]*current['conditions']['Q']['conducting states'][value])
+    weighted_mean_cond = (np.sum(curr))*10**12 # convert to pS
+    
+    
+    return(N,i,Popen,y_mean,x,I_skew,var_skew,total_po, weighted_mean_cond)
+
+def r2_and_connect_thresholds(path,align=True,ensemble=False):
+    """
+    Performs mechanistic analysis 1 and 2 and 
+    Generates the returns for a model's table': i.e. ensemble vs optimised, aligned/not
+    And returns associated figures
+    N, i, Po, g_mean, Po, Iskew,varskew, Po ground, weighted mean conductance ground, r2, bins, bin thresh, sweeps, sweepthresh
+    sweepno,sweepthres,bi
+
+    """
+    if not ensemble:
+        sweepno,sweepthres,binno,binthresh = mechanistic_analysis(path,align=align)
+        N,i,Popen,y_mean,x,I_skew,var_skew,total_po,weighted_mean_cond = mechanistic_analysis_2(path, binno, sweepno,align=align)
+    else:
+        sweepno,sweepthres,binno,binthresh = 1000,np.nan,0,np.nan
+        N,i,Popen,y_mean,x,I_skew,var_skew,total_po,weighted_mean_cond = mechanistic_analysis_2(path, 0, 1000,align=align)
+    # use x to calculate r2
+    r2 = r2_score(x[2,:]-x[1,:],epp.noise_func(x, N, i))
+    if align:
+        print("alignment was performed")
+    return(N,i,Popen,y_mean,total_po,weighted_mean_cond,I_skew,var_skew,r2,sweepno,sweepthres,binno,binthresh)
+
+def triplicate_analysis(path1,path2,path3,savepath):
+    
+    """
+    This code is very slow and produces lots of graphs! want to remove the iterative selection element
+    
+    usage: takes all three simulation files and produces figures and tables
+    after this run multigraph_my_figs() to save the figures as a single PDF
+    
+    For a triplicate of simulations, runs r2_and connect_threshold for all three simulations
+    ensemble/optimised/aligned/unaligned
+    
+    and then saves them to the base folder
+    
+    probably 15 min runtime or so.
+    
+    Also calculates SEM where appropriate
+
+    total error not calculated: R2 is more informative of our ability to capture the data
+    
+    Nb, due to file name formatting differences, paths input separately.
+
+    N,i,Popen,y_mean,total_po,I_skew,var_skew,r2,sweepno,sweepthres,binno,binthresh
+    """
+    values = np.zeros([12,13])
+    means = np.zeros([4,13])
+    sems = np.zeros([4,13])
+
+    #ensemble, unaligned
+    values[0,:] = r2_and_connect_thresholds(path1,align=False,ensemble=True)
+    values[1,:] = r2_and_connect_thresholds(path2,align=False,ensemble=True)
+    values[2,:] = r2_and_connect_thresholds(path3,align=False,ensemble=True)
+    #optimised, unaligned - try statements for whne fails.
+    try:
+        values[3,:] = r2_and_connect_thresholds(path1,align=False,ensemble=False)
+    except Exception:#TypeError:
+         values[3,:] = np.nan
+    try:
+        values[4,:] = r2_and_connect_thresholds(path2,align=False,ensemble=False)
+    except Exception:#TypeError:
+         values[4,:] = np.nan
+    try:
+        values[5,:] = r2_and_connect_thresholds(path3,align=False,ensemble=False)
+    except Exception:#TypeError:
+        values[5,:] = np.nan
+    #ensemble,aligned
+    values[6,:] = r2_and_connect_thresholds(path1,align=True,ensemble=True)
+    values[7,:] = r2_and_connect_thresholds(path2,align=True,ensemble=True)
+    values[8,:] = r2_and_connect_thresholds(path3,align=True,ensemble=True)
+    #optimised, aligned
+    try:
+        values[9,:] = r2_and_connect_thresholds(path1,align=True,ensemble=False)
+    except Exception:#TypeError:
+        values[:,9] = np.nan
+    try:
+        values[10,:] = r2_and_connect_thresholds(path2,align=True,ensemble=False)
+    except Exception:#TypeError:
+        values[10,:] = np.nan
+    try:
+        values[11,:] = r2_and_connect_thresholds(path3,align=True,ensemble=False)
+    except Exception:#TypeError:
+        values[11,:] = np.nan
+    # get means for each triplicate
+    means[0,:] = np.nanmean(values[:3,:],axis=0)
+    means[1,:] = np.nanmean(values[3:6,:],axis=0)
+    means[2,:] = np.nanmean(values[6:9,:],axis=0)
+    means[3,:] = np.nanmean(values[9:,:],axis=0)
+
+    # get SEMS
+    sems[0,:] = sps.sem(values[:3,:],axis=0)
+    sems[1,:] = sps.sem(values[3:6,:],axis=0)
+    sems[2,:] = sps.sem(values[6:9,:],axis=0)
+    sems[3,:] = sps.sem(values[9:,:],axis=0)
+    
+    means = pd.DataFrame(means,columns = ['N','i','Po','y_mean','Po_grnd','g_grnd','I_skew','var_skew','r2','sweepno','sweepthres','binno','binthresh'])
+    SEMs = pd.DataFrame(sems,columns = ['N','i','Po','y_mean','Po_grnd','g_grnd','I_skew','var_skew','r2','sweepno','sweepthres','binno','binthresh'])
+
+    with open( "/".join(path1.split('/')[:-1]) + "/means",'wb') as handle:
+       pickle.dump(means,handle,protocol=pickle.HIGHEST_PROTOCOL)
+    with open( "/".join(path1.split('/')[:-1]) + "/sems",'wb') as handle:
+       pickle.dump(SEMs,handle,protocol=pickle.HIGHEST_PROTOCOL)
+    
+    # close the figures to avoid ball ache
+    for item in plt.get_fignums():
+        #if item not in figlist: # can provide a global figlist
+            plt.close(item)
+    # but for tiff, have to save manually. Sigh - had hoped to use a dict of below.
+   # Best just to keep track of all numbers
+    return(means,SEMs)
+
+def load_meanorsem(path):
+    with open(path,'rb') as handle:
+        inputs = pickle.load(handle)
+    return(inputs)
+
 # =============================================================================
 # =============================================================================
 #  Unused, but tested code for model fitting
@@ -2752,3 +2952,4 @@ def trapesium_t(current_dataframe):
         s[timestep] = np.trapz(x[:timestep],y[:timestep]) ### faster 
             
     return(s)
+
