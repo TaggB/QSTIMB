@@ -145,6 +145,34 @@ So let us see how this works. This time, we shall change some of the arguments:
     model_outputs = qs.simulate(qs.agonist_application_tau_leap_Gillespie,n_sweeps=100,noise_sd=0,N=500,Q=testmodel,t_final=0.15,agonist_time=0.02,agonist_duration=100*10**-3,first_conc = 0,second_conc = 5*10**-3,iterations=1,voltage=-60,interval=1e-05)
 '''
 Above, we perform 100 independent stochastic agonsit applications for 500 receptors, without adding any digital noise. The agonist (5 mM) is applied at t = 20 ms for 100 ms. The total time simulated is 150 ms (i.e. 30 ms after agonist removal).
+## **File handling**
+As well as repeating an individual epoch many times, it is good practice to repeat the simulation a number of times. We can think of the individual simulation of 100 epochs as akin to a current obtained from the recording of a single cell or excised patch. To build a data set, we should repeat this several times. Simulation objects are often large though (because of all of the information stored). Keeping them in RAM is inefficient. We might also want to save the results and access them later. For this, we cna use some basic python syntax.
+''Python
+
+    import QSTIMB as qs
+    testmodel = qs.threesQ()
+    for item in np.arange(0,3):
+        hold = qs.simulate(qs.agonist_application_tau_leap_Gillespie,n_sweeps=100,noise_sd=0,N=500,Q=testmodel,t_final=0.15,agonist_time=0.02,agonist_duration=100*10**-3,first_conc = 0,second_conc = 5*10**-3,iterations=1,voltage=-60,interval=1e-05)
+        qs.save_sim(hold,'a_filepath_to_desired_directory','name_of_simulation_{}.format(item))
+'''
+
+Firstly, note that we import the module first and give it an alias qs. So when we access the functions now, we refer to them as subfunctions of this module. i.e. qs.function()
+
+In the above code, we use a loop to repeat the process of the simulation. For the unitiated, a loop is just a means to execute the same code several times. We repeat the entire simulation threee times. Each simulation is temporarily stored as a variable called 'hold'
+</br>  
+We then save the hold variable to somewhere on your computer. A neat trick for those unfamiliar with the structure of their file system is to create a file where you want to save the simulation to, and drag this into the python terminal. You should get a string of the format 'mycomputer/User/some_directory/some_file'. The length of that string will change dependent on the complexity of your file directory. Copy and paste that string in place of 'a_filepath_to_desired_directory'. Decide on a anme for the simulation, which should also be a string. Leave the {}, which is useful since it provides the value of 'item' from the loop, such that the frist run will be saved as 'name_of_simulation_0', and subsequent runs will have different (unique names). This prevents overwriting existing files with the same name upon subsequent iterations.
+</br>  
+</br>  
+Great, so we have saved three iterations of a simulation. Now we can load them.
+''Python
+
+      simulation_dictionary= qs.load_sim(path_to_simulation)
+'''
+Where path_to_simulation is simply the concatenation of the direcotry and filename above (again, we cna drag this in by dragging the desired simulation file into the terminal and copy/pasting.
+## **Simulation file format**
+Now we have a simulation - perhaps a single, or multiple epochs - either run alone, or using the simulate function, we can access the object. For the pruposes of this, We wil assume that we are loading a simulation as above.
+
+
 
 
 
