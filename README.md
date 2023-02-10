@@ -14,7 +14,7 @@ Models are initialised as dictionaries containing all of the necessary informati
 >/br>
 Several example model dictionaries are included to give an illustration of how the object should be created. As a simple case, let's consider the builtin ThreesQ model, which is Smod34 from Harveit and Veruki (2006). In this scheme, arbitrary ligand-gated ion channel-coupled receptors can exist in resting, agonist bound, or open states
 
-'''Python
+'''Python"""
     def threeS(agonist_conc =5*(10**-3)):
         """
        Classical three state ion channel receptor model
@@ -50,7 +50,7 @@ Several example model dictionaries are included to give an illustration of how t
         Q.update({'Q':q})
         Q['Q'][~np.isfinite(Q['Q'])]=0
         return(Q)
-'''
+'''"""
 So first, run the line
 '''python
 Q = threesQ(agonist_conc =5*(10**-3)
