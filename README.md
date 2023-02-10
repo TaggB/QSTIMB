@@ -12,22 +12,16 @@ The additional purposes of the software are to serve functions for simulation ro
 ## **Model format**
 Models are initialised as dictionaries containing all of the necessary information to perform simulation stored as keys. This includes: a transition matrix, a Q matrix (which necessarily adopts the standard convention for diagonals), key:value pairs of initial states, key: value pairs of conducitng states and their conductances, and key:value pairs of transition rates which are concentration-dependent, and the concentration for the rates in that Q matrix.**It is recommended that functions are used to construct the dictionaries**.
 >/br>
-Several example model dictionaries are included to give an illustration of how the object should be created. As a simple case, let's consider the builtin ThreesQ model, which is Smod34 from Harveit and Veruki (2006). In this scheme, arbitrary ligand-gated ion channel-coupled receptors can exist in resting, agonist bound, or open states
+Several example model dictionaries are included to give an illustration of how the object should be created. As a simple case, let's consider the builtin ThreesQ model, which is Smod34 from Harveit and Veruki (2006). In this scheme, arbitrary ligand-gated ion channel-coupled receptors can exist in resting, agonist bound, or open states:
 
-'''Python"""
+- [0] Unbound, closed state
+- [1] Bound, closed state
+- [2] open state
+such that the model scheme is:
+   [0]--[1]--[2]
+
+'''Python
     def threeS(agonist_conc =5*(10**-3)):
-        """
-       Classical three state ion channel receptor model
-       using constants from Harveit and Veruki (2006 - their Smod34)
-
-       - [0] Unbound, closed state
-       - [1] Bound, closed state
-       - [2] open state
-
-       such that:
-           [0]--[1]--[2]
-
-        """
         Q = {}
         tr = np.zeros([3,3]) # for 3 states
         tr[0,1] = (6*10**6)*agonist_conc
@@ -50,7 +44,7 @@ Several example model dictionaries are included to give an illustration of how t
         Q.update({'Q':q})
         Q['Q'][~np.isfinite(Q['Q'])]=0
         return(Q)
-'''"""
+'''
 So first, run the line
 '''python
 Q = threesQ(agonist_conc =5*(10**-3)
