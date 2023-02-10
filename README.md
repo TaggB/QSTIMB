@@ -21,6 +21,7 @@ such that the model scheme is:
    [0]--[1]--[2]
 
 '''Python
+    
     def threeS(agonist_conc =5*(10**-3)):
         Q = {}
         tr = np.zeros([3,3]) # for 3 states
@@ -72,12 +73,14 @@ This model, once defined, can then be passed to the function that performs simul
 First, define a model object. Here, I shall use the threesQ model from above, with default arguments (5 mM agonist). Note that the model dictionary cna be updated, should one wish to change the rates between simulations. A deep copy is recommended (using the .copy(deep=True) method).
 
 '''Python
+
     testmodel = threesQ()
 '''
 
 A simple simulation can then be performed with the method of choice. Since the CME method is deterministic, it will always return the same simualted current and occupancies. Runtime is dependent on mdoel compelxity, but should not take more than a few seconds with <25 states. If a relaxation  to steady-state is desired, this is relatively simple. Here, we will use 50 receptors (N), at a sampling frequency of 20 kHz, for a total time of 10 ms.
 
 '''Python
+
     testmodel = threesQ()
     model_outputs = Q_relax(Q=testmodel,N=50,t_final = 10*(10**-3),voltage= -60,interval= 5e-05,Vrev= 0,plot =True, just_pt=False)
 '''
@@ -86,6 +89,7 @@ The simulation should be displayed and all relevant information stored in model 
 We can also simulate realistic agonist applications, where the concentration of agonist is changed. This approach uses realistic concentration jumps (see raw code for details: Credit to Andrew Plested for method). We will use the same number of receptors, sampling frequency, and model. This time, the receptors are initially in no agonist (first_conc = 0). At 5 ms (agonist_time), 5 mM agonist is applied (second_conc) for 1 ms (agonist_duration). The receptors are simulated for a further 4 ms (t_final). This means that a relaxation is applied once the agonist is completely removed. The rise_time and decay_time arguments specify how fast the exchange occurs between first_conc and second_conc. By default, these are both  250 us.
 
 '''Python
+
     testmodel = threesQ()
     model_outputs = Q_agonist_application(Q=testmodel,N=50,first_conc=0,second_conc=5*10**-3,agonist_time=5*(10**-3),agonist_duration = 1*(10**-3),t_final = 10*10**-3,interval = 5e-05,voltage =-60,Vrev = 0,rise_time=250*10**-6,decay_time=250*10**-6,plot = True):
 '''
