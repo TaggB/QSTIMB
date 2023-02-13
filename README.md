@@ -224,19 +224,64 @@ For now, I shall display an example case using code only from the QSTIMB module.
 </br>
 
 ## **Example usage case**
-Currents arise from the same population of receptors with stochastic variation. If we wanted to fit a model, understanding whether a particular mechanism accounts for the variance we observe allows us to further optimise model accuracy. This is because it allows us to consider not only whether it accounts for one current, but rather, all potential currents we may observe in a recording.
-</br>
-Alternatively, we might wish to understand how particular kinetics within a mechanism change a receptor's responsiveness or kinetics.
+Currents arise from the same population of receptors with stochastic variation. We might wish to understand how particular kinetics within a mechanism change a receptor's responsiveness or kinetics.
 </br>
 Commonly, this is performed using noise analysis (or fluctuation analysis). Here, we will use a realistic agonist application and actually apply non-stationary current fluctuation analysis - see Sigg (1994) or Harveit and Veruki (2006,2007) for explanation.
 </br>
-First, we simulate, save, and load a current as above.
 </br>
-Then, I decided to see how changing th number of epochs used changed the estimates of N, weighted signle channel conductance, and peak open probability. To do this, I used Monte Carlo simulation (sampling repeititively without replacement). Fortunately, this code is built into QSTIMB, and could be modified as desired.
+Then, I decided to see how changing the number of epochs used changed the estimates of N, weighted signle channel conductance, and peak open probability. To do this, I used Monte Carlo simulation (sampling repeititively without replacement). Fortunately, this code is built into QSTIMB, and could be modified as desired.
 
+''Python
+   
+      triplicate_analysis(path1,path2,path3)
+      
+'''
+This function is a wrapper for several other functions.
+</br>
+It takes three paths for three independent, but identical simulations. Each simulation had 1000 epochs.
+</br>
+Under the hood, it is calling two functions:
+</br>
+The first function (EpyPhys.NSFA_optimal) repeatedly performs monte carlo noise analysis.
+   First, it samples a number of epochs from the total of 1000 without replacement.
+   Noise analysis is performed on these sweeps
+      This is repeated 16 times for each number of sweeps (batch size = 16)
+         E.g. for a sample size of 20, noise analysis is performed 16 times on independently, randomly sampled sweeps.
+      An average is taken for the key parameters N, i, and Po; as well as for skew of the unbinned current amplitude and variance.
+</br>
+Eventually, this means that for each samples size (e.g. 10, 20, 50, 100, 200, 500, 1000 sweeps/epochs), we generate a value for each of the parameters that should be  indpendent of the identity of sampled sweeps/epochs. This allows us to see how the value of estimates change as the number of sweeps evolves. As such, we can exmaine the certainty of estimates - over what range do they vary?
+</br>
+The second function retrieves ground truth values, and also calculates the coefficient of determination from the 'most certain' fit.
+   
+## **Potential usage case**
+If we wanted to fit a model, usually this is performed by fitting raw currents with (deterministic simulations). This requires some knowledge of conducting state open times etc. Choosing which model is the most appropriate is often quite arbitrary. How non-conducitng 'hidden states' are arranged is quite arbitrary since they may only subtly affect the macroscopic current.
+</br>
+One way we can constrain this is by examining whether a particular mechanism (with its reatew constants) accounts for the variance we observe. This allows us to consider not only whether a mechanism accounts for one current, but all potential currents we may observe in a recording.
+</br>
+So fitting any mechanism can be broken down into the following problems:
+1. Generating a mechanism that is microscopically reversible - some rates protected, or fixed, such that they do not vary
+2. Comparing its (simulated) current waveform and variance to real data
+3. Optimising the mechanism until it describes all cases
+</br>
+There are a few nuances to this, but some starter code is built into QSTIMB.
+The first option I attempted is coded as firefly_fit.
+</br>
+This function takes a real current, a putative mechanism, and optimises transition rates to minimise the error between simulated and real data. The optimisation is performed using a firefly algorithm (with superposition). The firefly algorithm is seemingly an attractive emans for performing fitting, since mathematically, we should move closer to the best fit in an N-dimensional space. The reader can examine the literature elsewhere for why this is the case mathematiclaly, but analagously:
+1. We have a point source: this is the N-dimensional space occupied by the real data (at a given timepoint). This point source emits light of a vlue that decreases with distance.
+2. We have a number of (randomly placed) fireflies that luminesce according to their proximity to the point souce. This luminescence also decreases over distance.
+3. Fireflies moved to the brightest light source they can see (i.e. the value of some transition rates change)
+</br>
+Superposition allows the best fly to move in an arbitrary direction to see whether it gets closer or further form the point source (i.e. which direction it must move to decrease error of the fit to real data).
+</br>
+Several problems arise for models with a large number of rate constants:
+1. Most of the flies are only as good as the best fly - this is a core criticism of firefly algorithms, that can make them no better than swarm algorithms.
+2. Which rate to vary in a high dimensional space?
+</br>
+An alternative approach is coded in the function fittigration.
+This takes the same inputs as the firefly approach, but instead uses the current integral for optimisation with an evolutionary approach. This also did not perform satisfactorily.
+</br>
+In fact, all open rates were left undetermined in these approaches (because of the purpose of my particular test cases), but if they were known/fitted to some values, either approach may become tractable for model fitting. It is also faster than regenerating Q matrices and performing CME simulations.
 
-  
-  
 
 
 
