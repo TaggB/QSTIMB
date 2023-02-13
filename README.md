@@ -4,14 +4,20 @@ A Quick start guide is detailed below. An explanation of what is going on under 
 QSTIMB primarily serves to simulate ligand-gated ion channel-coupled receptors. This can be achieved via two main routes:
 -1. A chemical master equation (CME) type approach, using the Q matrix method (Colquhoun and Hawkes) - via either relaxations in constant agonist cocnentrations, or during fast alternation between any two agonist concentrations (such as in piezo-driven fast application).
 -2. A stochastic approach, which implements the Gillespie algorithm to allow either relaxations or fast alternation between any two agonist concentrations (such as in piezo-driven fast application). This approach is necessary because real currents show variance in their temporal characteristics even when the stimulus is identical.
+
 </br>
+
 The additional purposes of the software are to serve functions for simulation routines (e.g. adding Gaussian noise, plotting models), and to be simple to use. QSTIMB is written using a functional programming framework for those unfamilair with Python. **For help with a function, type 'help(functionname)' to view its documentation.**. To this end, various example models are included, illustrting how to construct them. The adopted format for the model object is deliberately intuitive.
 </br>  
 **For a guide on how to use, scroll down.**
+
 </br>  
+
 ## **Model format**
 Models are initialised as dictionaries containing all of the necessary information to perform simulation stored as keys. This includes: a transition matrix, a Q matrix (which necessarily adopts the standard convention for diagonals), key:value pairs of initial states, key: value pairs of conducitng states and their conductances, and key:value pairs of transition rates which are concentration-dependent, and the concentration for the rates in that Q matrix.**It is recommended that functions are used to construct the dictionaries**.
+
 >/br>
+>
 Several example model dictionaries are included to give an illustration of how the object should be created. As a simple case, let's consider the builtin ThreesQ model, which is Smod34 from Harveit and Veruki (2006). In this scheme, arbitrary ligand-gated ion channel-coupled receptors can exist in resting, agonist bound, or open states:
 
 - [0] Unbound, closed state
@@ -54,27 +60,45 @@ Q = threesQ(agonist_conc =5*(10**-3)
 tr is a k x k matrix, where k is the number of states in the model. 
 </br>  
     tr[i,j] contains the rate for a transition from state i to j per second and is stored as Q['rates']. This is used for stochastic simulations. Some of these rates        are concentration-dependent. As in Q, these rates are expressed as dimensionless constants (per second) - except where concentration-dependent rates, which are         expressed as per Mole per second
+    
 </br>  
+
     The conc-dep key (accessed via Q['conc-dep']) tells us which rates are concentration-dependent (key = state i, value = state j). 
+    
 </br>  
+
 Some states - the open states - are associated with a conductance. These are detailed in the keys of Q['conducting states'], where values are their associated conductance in S. Here both conducting states have the same conductance (50 pS). 
 </br>  
 If we access Q['conc'], we see that it is 5mM (or 5x10**-3M). This value is used for relaxations, and is used to scale to rates as appropriate during agonist applications.
+
 </br>  
+
 Q['initial states'] contains a list of initial states - i.e. states occupied at the simulation start time. The keys are state indexes (state i), and the values are occupancy probability. It is more efficient if this contains states only with a probability >0, but it can in theory also contain states with probabiltiy 0 (i.e. it could be a list of all states). 
+
 </br>  
+
 Finally, Q['Q'] is the same as Q['rates'], but follows convention for diagnoal entries, which is necessary for the Q matrix (CME) approaches.
+
 </br>  
+
 ## **Constructing custom models**
 To create a custom model, simply follow the convention above: create a function of the type above that returns a similar dictionary object, with k x k dimension objects for the number of desired states, k.
+
 </br>  
+
 This of course creates an arbitrary model that may or may not be biophysically realistic. For more complex options, such as enacting miscroscopic reversibility, see 'make_Q_reversible'.
+
 </br>  
+
 This model, once defined, can then be passed to the function that performs simulations.
+
 </br>  
+
 ## **Performing Simulations**
 In this section, I will showcase the underlying functions that each simulate a single stimulus epoch. Obviously, we often require more than one, which will be covered in the next section.
+
 </br>  
+
 First, define a model object. Here, I shall use the threesQ model from above, with default arguments (5 mM agonist). Note that the model dictionary cna be updated, should one wish to change the rates between simulations. A deep copy is recommended (using the .copy(deep=True) method).
 
 '''Python
@@ -98,11 +122,17 @@ We can also simulate realistic agonist applications, where the concentration of 
     testmodel = threesQ()
     model_outputs = Q_agonist_application(Q=testmodel,N=50,first_conc=0,second_conc=5*10**-3,agonist_time=5*(10**-3),agonist_duration = 1*(10**-3),t_final = 10*10**-3,interval = 5e-05,voltage =-60,Vrev = 0,rise_time=250*10**-6,decay_time=250*10**-6,plot = True)
 '''
+
 </br>  
+
 We might want to perform stochastic simulations, which recapitulate the stochastic variation of ion channel currents. Each repeated stimulus epoch gives a different response current because which transition occurs and when it occurs generates variation in the amplitude and time course of the response.
+
 </br>  
+
 Performing stochastic simulations is achieved through a similar means to CME methods, but relies on different functions. There are several means to achieve this, but the validated methods are Tau_leap_Gillespie and agonist_application_tau_leap_Gillespie, which are the stochastic versions of relaxations and agonist applicatiosn respectively. This approach is quite fast per epoch.
+
 </br>  
+
 We can perform a stochastic relaxation with the sampe parameters as above using:
 ''Python
 
@@ -126,18 +156,30 @@ Imagine, instead of simulating a single epoch, we want to simulate 100. This wou
     simulation_outputs = simulate(func,n_sweeps,noise_sd = 4,show_progress=True,graph=True,**kwargs):
 '''
 func specifies which method to use. There isn't much point defining this to be the CME method (see above), but for stochastic methods, this can be either of the two functions described above (or the alternative weighted adaptive/poisson-based methods). 
+
 </br>  
+
 n_sweeps is the number of repeated, but independent simulations to perform. So for 100, this would be 100.
+
 </br>  
+
 noise_sd is also an argument worth mentioning. This allows digital noise to be layered onto the simulation at the level of the current (noting that the stochastic variation arises as the level of occupancy). Here this is set to 4 (pA), and refers to the standard deviation of noise to apply.
+
 </br>  
+
 show_progress gives a progress bar and time per run when = True.
+
 </br>  
+
 graph shows the end result of the simulation. For many simualtions, one might like to set this to False).
+
 </br>  
+
 kwargs is the crucial element of this wrapper function. For those unfamiliar with python, this refers to keyword arguments. Simply, these are the arguments you would usually provide to the function that simualtes individual epochs.
+
 </br>  
 </br>  
+
 So let us see how this works. This time, we shall change some of the arguments:
 ''Python
 
@@ -159,10 +201,14 @@ As well as repeating an individual epoch many times, it is good practice to repe
 Firstly, note that we import the module first and give it an alias qs. So when we access the functions now, we refer to them as subfunctions of this module. i.e. qs.function()
 
 In the above code, we use a loop to repeat the process of the simulation. For the unitiated, a loop is just a means to execute the same code several times. We repeat the entire simulation threee times. Each simulation is temporarily stored as a variable called 'hold'
+
 </br>  
+
 We then save the hold variable to somewhere on your computer. A neat trick for those unfamiliar with the structure of their file system is to create a file where you want to save the simulation to, and drag this into the python terminal. You should get a string of the format 'mycomputer/User/some_directory/some_file'. The length of that string will change dependent on the complexity of your file directory. Copy and paste that string in place of 'a_filepath_to_desired_directory'. Decide on a anme for the simulation, which should also be a string. Leave the {}, which is useful since it provides the value of 'item' from the loop, such that the frist run will be saved as 'name_of_simulation_0', and subsequent runs will have different (unique names). This prevents overwriting existing files with the same name upon subsequent iterations.
+
 </br>  
 </br>  
+
 Great, so we have saved three iterations of a simulation. Now we can load them.
 ''Python
 
@@ -187,28 +233,38 @@ which returns:
       dict_keys(['t', 'p_t', 'occ_t', 'I_t', 'conditions'])
 '''
 t is simply the time intervals (samples) - i.e. the timepoints at which the simulation attributes correspond to.
+
 </br>
+
 p_t is the occupancy probability at a given value of t.
    I.e. values are between 0 and 1, and at a given time point, sum to 1.0 across the values for all states.
    It can be accessed as simulation_dictionary['p_t']
    It has dimensions k X t X r, where k is the number of model states, t is the number of time points (equal in length to 't'), and r is the number of epochs in the simulation ( = n_sweeps, in the case above = 100)
    p_t is created by dividing occ_t/N
+   
 </br>
+
 occ_t is the real occupancy of each state. 
    It can be accessed as simulation_dictionary['occ_t']
    Its values are between 0 and N at each time point.
    occ_t also has k X t X r shape.
+   
 </br>
+
 I_t is the current
    It is produced in the simualtion by multiplying the conductances of all open states by their associated conductance, and then taking the sum at each tiem point.
    It can be accessed as simulation_dictionary['I_t']
    It has shape t x r
+   
 </br>
+
 conditions is a dictionary of the model object used for the simulation, By now, it should have familiar structure.
    It can be accessed as simulation_dictionary['conditions']
    nested keys can be viewed by    It can be accessed as simulation_dictionary['conditions'].keys().
+   
 </br>
 </br>
+
 The above information should be sufficient to perform plotting, averaging and further analysis.
 
 We can also easily convert the current to a standard pandas DataFrame format, to allow subsequent analysis using EPyPhys or other custom routines. 
@@ -217,7 +273,9 @@ We can also easily convert the current to a standard pandas DataFrame format, to
       simulated_current = qs.current_to_DataFrame(simulation_dictionary)
 '''
 In this object, which I have decided to call 'simulated_current', each sweep is a column of the DataFrame, associated with a timestamped index. This allows us to use pandas built-in methods. Other packages exist should the user wish to convert to other formats (e.g. ABF or pclamp files).
+
 </br>
+
 In EPyPhys, we can do all sorts of analysis on this simulated current - e.g. noise analysis (of many varieties), fitting time constants etc.
 For now, I shall display an example case using code only from the QSTIMB module.
 
@@ -225,10 +283,14 @@ For now, I shall display an example case using code only from the QSTIMB module.
 
 ## **Example usage case**
 Currents arise from the same population of receptors with stochastic variation. We might wish to understand how particular kinetics within a mechanism change a receptor's responsiveness or kinetics.
+
 </br>
+
 Commonly, this is performed using noise analysis (or fluctuation analysis). Here, we will use a realistic agonist application and actually apply non-stationary current fluctuation analysis - see Sigg (1994) or Harveit and Veruki (2006,2007) for explanation.
+
 </br>
 </br>
+
 Then, I decided to see how changing the number of epochs used changed the estimates of N, weighted signle channel conductance, and peak open probability. To do this, I used Monte Carlo simulation (sampling repeititively without replacement). Fortunately, this code is built into QSTIMB, and could be modified as desired.
 
 ''Python
@@ -237,28 +299,42 @@ Then, I decided to see how changing the number of epochs used changed the estima
       
 '''
 This function is a wrapper for several other functions.
+
 </br>
+
 It takes three paths for three independent, but identical simulations. Each simulation had 1000 epochs.
+
 </br>
+
 Under the hood, it is calling two functions:
+
 </br>
+
 The first function (EpyPhys.NSFA_optimal) repeatedly performs monte carlo noise analysis.
    First, it samples a number of epochs from the total of 1000 without replacement.
    Noise analysis is performed on these sweeps
       This is repeated 16 times for each number of sweeps (batch size = 16)
          E.g. for a sample size of 20, noise analysis is performed 16 times on independently, randomly sampled sweeps.
       An average is taken for the key parameters N, i, and Po; as well as for skew of the unbinned current amplitude and variance.
+      
 </br>
+
 Eventually, this means that for each samples size (e.g. 10, 20, 50, 100, 200, 500, 1000 sweeps/epochs), we generate a value for each of the parameters that should be  indpendent of the identity of sampled sweeps/epochs. This allows us to see how the value of estimates change as the number of sweeps evolves. As such, we can exmaine the certainty of estimates - over what range do they vary?
+
 </br>
+
 The second function retrieves ground truth values, and also calculates the coefficient of determination from the 'most certain' fit.
    
 ## **Potential usage case**
 If we wanted to fit a model, usually this is performed by fitting raw currents with (deterministic simulations). This requires some knowledge of conducting state open times etc. Choosing which model is the most appropriate is often quite arbitrary. How non-conducitng 'hidden states' are arranged is quite arbitrary since they may only subtly affect the macroscopic current.
+
 </br>
+
 The reader should be aware that one approach we could use to select models would be to vary agonist concentration in real data and simulations.
 An additional way we can constrain the model is by examining whether a particular mechanism (with its reatew constants) accounts for the variance we observe. This allows us to consider not only whether a mechanism accounts for one current, but all potential currents we may observe in a recording.
+
 </br>
+
 So fitting any mechanism can be broken down into the following problems:
 1. Generating a mechanism that is microscopically reversible - some rates protected, or fixed, such that they do not vary
 2. Comparing its (simulated) current waveform and variance to real data
@@ -276,9 +352,13 @@ This function takes a real current, a putative mechanism, and optimises transiti
 1. We have a point source: this is the N-dimensional space occupied by the real data (at a given timepoint). This point source emits light of a vlue that decreases with distance.
 2. We have a number of (randomly placed) fireflies that luminesce according to their proximity to the point souce. This luminescence also decreases over distance.
 3. Fireflies moved to the brightest light source they can see (i.e. the value of some transition rates change)
+
 </br>
+
 Superposition allows the best fly to move in an arbitrary direction to see whether it gets closer or further form the point source (i.e. which direction it must move to decrease error of the fit to real data).
+
 </br>
+
 Several problems arise for models with a large number of rate constants:
 1. Most of the flies are only as good as the best fly - this is a core criticism of firefly algorithms, that can make them no better than swarm algorithms.
 2. Which rate to vary in a high dimensional space? Which order to vary them in?
@@ -295,28 +375,48 @@ In fact, all open rates were left undetermined in these approaches (because of t
 # How QSTIMB works
 
 An excellent description of how CME (Q matrix-based simulations are achieved is found in "A Q matrix Cookbook" (https://link.springer.com/chapter/10.1007/978-1-4419-1229-9_20).
+
 </br>
+
 But the stochastic simulations for ligand-gated channels are what make QSTIMB attractive. This works through an adaptation of the Gillespie algorithm. Whether we are performing an agonist application, or the cocnentration is fixed, we know that we have some concentration-dependent and some dimensionless rate constants.
+
 </br>
+
 We break a simulation period (t_final in code, epoch/sweep in analagoy to real data) into time intervals. At each interval, we calculate the probabiltiy of a given transition occurring. Of course, this is must be stochastic. If necessary, we pre-calculate concentration-dependent rates in accordance with the concentration of agonsit at each time point.
+
 </br>
+
 So, using the recommended methods, we must select how many of each potential transition occur.
+
 </br>
+
 First, we calculate a propensity function. This describes the probaility of each transition, given a set of all possible transitions from each state. To do this, QSTIMB uses pseudo time constants (the inverse of the rate constant, scaled for the interval length). When relative (i.e. a given pseudo time constant/sum of all pesudo tiem constants describing exit of that state), this describes the probability of a given transition occurring - i.e. its propensity.
+
 </br>
+
 Under the recommended method, we then take a random binomial draw for N receptors in that state from the distribution described by the propensity. We do this for each potential transition to calcualte the number of each transition occurring.
+
 </br>
+
 Then we get a state transition vector that describes the number of receptors leaving state i and entering states j->c for all communicable states c.
+
 </br>
+
 Doing this for all states, k, we can obtain the distribution of receptors across states at the next time point.
 
 ## Some nuance in population management
 A known problem with fixed interval (i.e. non-continuous time) Gillespie methods is that because random draws occur indepdently for each transition, we can end up with more transitions occurring than exist in state i.
+
 </br>
+
 Usually, this cna be mititgated by performing several epochs and averaging state occupancy. This is not appropriate for our purposes, since this changes the dependence of the current variance on occupancy.
+
 </br>
+
 In QSTIMB, I redistribute any excess populations probabilistically to ensure that number of transitions is less thna or equal to state occupancy. Any remainder population is considered to soujoun. 
+
 </br>
+
 Fortunately, this approach was validated and allowed realistic current-variance profiles to be obtained.
 
 
