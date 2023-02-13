@@ -1,5 +1,5 @@
 # QSTIMB
-Q-matrix and Stochastic simulation-based Ion Channel Model Builder
+# Q-matrix and Stochastic simulation-based Ion Channel Model Builder
 A Quick start guide is detailed below. An explanation of what is going on under the hood is detailed at the end.
 QSTIMB primarily serves to simulate ligand-gated ion channel-coupled receptors. This can be achieved via two main routes:
 -1. A chemical master equation (CME) type approach, using the Q matrix method (Colquhoun and Hawkes) - via either relaxations in constant agonist cocnentrations, or during fast alternation between any two agonist concentrations (such as in piezo-driven fast application).
@@ -256,7 +256,8 @@ The second function retrieves ground truth values, and also calculates the coeff
 ## **Potential usage case**
 If we wanted to fit a model, usually this is performed by fitting raw currents with (deterministic simulations). This requires some knowledge of conducting state open times etc. Choosing which model is the most appropriate is often quite arbitrary. How non-conducitng 'hidden states' are arranged is quite arbitrary since they may only subtly affect the macroscopic current.
 </br>
-One way we can constrain this is by examining whether a particular mechanism (with its reatew constants) accounts for the variance we observe. This allows us to consider not only whether a mechanism accounts for one current, but all potential currents we may observe in a recording.
+The reader should be aware that one approach we could use to select models would be to vary agonist concentration in real data and simulations.
+An additional way we can constrain the model is by examining whether a particular mechanism (with its reatew constants) accounts for the variance we observe. This allows us to consider not only whether a mechanism accounts for one current, but all potential currents we may observe in a recording.
 </br>
 So fitting any mechanism can be broken down into the following problems:
 1. Generating a mechanism that is microscopically reversible - some rates protected, or fixed, such that they do not vary
@@ -290,6 +291,35 @@ This takes the same inputs as the firefly approach, but instead uses the current
 </br>
 
 In fact, all open rates were left undetermined in these approaches (because of the purpose of my particular test cases), but if they were known/fitted to some values, either approach may become tractable for model fitting. It is also faster than regenerating Q matrices and performing CME simulations.
+
+# How QSTIMB works
+
+An excellent description of how CME (Q matrix-based simulations are achieved is found in "A Q matrix Cookbook" (https://link.springer.com/chapter/10.1007/978-1-4419-1229-9_20).
+</br>
+But the stochastic simulations for ligand-gated channels are what make QSTIMB attractive. This works through an adaptation of the Gillespie algorithm. Whether we are performing an agonist application, or the cocnentration is fixed, we know that we have some concentration-dependent and some dimensionless rate constants.
+</br>
+We break a simulation period (t_final in code, epoch/sweep in analagoy to real data) into time intervals. At each interval, we calculate the probabiltiy of a given transition occurring. Of course, this is must be stochastic. If necessary, we pre-calculate concentration-dependent rates in accordance with the concentration of agonsit at each time point.
+</br>
+So, using the recommended methods, we must select how many of each potential transition occur.
+</br>
+First, we calculate a propensity function. This describes the probaility of each transition, given a set of all possible transitions from each state. To do this, QSTIMB uses pseudo time constants (the inverse of the rate constant, scaled for the interval length). When relative (i.e. a given pseudo time constant/sum of all pesudo tiem constants describing exit of that state), this describes the probability of a given transition occurring - i.e. its propensity.
+</br>
+Under the recommended method, we then take a random binomial draw for N receptors in that state from the distribution described by the propensity. We do this for each potential transition to calcualte the number of each transition occurring.
+</br>
+Then we get a state transition vector that describes the number of receptors leaving state i and entering states j->c for all communicable states c.
+</br>
+Doing this for all states, k, we can obtain the distribution of receptors across states at the next time point.
+
+## Some nuance in population management
+A known problem with fixed interval (i.e. non-continuous time) Gillespie methods is that because random draws occur indepdently for each transition, we can end up with more transitions occurring than exist in state i.
+</br>
+Usually, this cna be mititgated by performing several epochs and averaging state occupancy. This is not appropriate for our purposes, since this changes the dependence of the current variance on occupancy.
+</br>
+In QSTIMB, I redistribute any excess populations probabilistically to ensure that number of transitions is less thna or equal to state occupancy. Any remainder population is considered to soujoun. 
+</br>
+Fortunately, this approach was validated and allowed realistic current-variance profiles to be obtained.
+
+
 
 
 
