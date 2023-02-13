@@ -262,11 +262,16 @@ So fitting any mechanism can be broken down into the following problems:
 1. Generating a mechanism that is microscopically reversible - some rates protected, or fixed, such that they do not vary
 2. Comparing its (simulated) current waveform and variance to real data
 3. Optimising the mechanism until it describes all cases
-</br>
+4. </br>
 There are a few nuances to this, but some starter code is built into QSTIMB.
 The first option I attempted is coded as firefly_fit.
+
 </br>
+
 This function takes a real current, a putative mechanism, and optimises transition rates to minimise the error between simulated and real data. The optimisation is performed using a firefly algorithm (with superposition). The firefly algorithm is seemingly an attractive emans for performing fitting, since mathematically, we should move closer to the best fit in an N-dimensional space. The reader can examine the literature elsewhere for why this is the case mathematiclaly, but analagously:
+
+</br>
+
 1. We have a point source: this is the N-dimensional space occupied by the real data (at a given timepoint). This point source emits light of a vlue that decreases with distance.
 2. We have a number of (randomly placed) fireflies that luminesce according to their proximity to the point souce. This luminescence also decreases over distance.
 3. Fireflies moved to the brightest light source they can see (i.e. the value of some transition rates change)
@@ -275,11 +280,15 @@ Superposition allows the best fly to move in an arbitrary direction to see wheth
 </br>
 Several problems arise for models with a large number of rate constants:
 1. Most of the flies are only as good as the best fly - this is a core criticism of firefly algorithms, that can make them no better than swarm algorithms.
-2. Which rate to vary in a high dimensional space?
+2. Which rate to vary in a high dimensional space? Which order to vary them in?
+
 </br>
+
 An alternative approach is coded in the function fittigration.
 This takes the same inputs as the firefly approach, but instead uses the current integral for optimisation with an evolutionary approach. This also did not perform satisfactorily.
+
 </br>
+
 In fact, all open rates were left undetermined in these approaches (because of the purpose of my particular test cases), but if they were known/fitted to some values, either approach may become tractable for model fitting. It is also faster than regenerating Q matrices and performing CME simulations.
 
 
