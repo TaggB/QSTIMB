@@ -373,6 +373,8 @@ This takes the same inputs as the firefly approach, but instead uses the current
 In fact, all open rates were left undetermined in these approaches (because of the purpose of my particular test cases), but if they were known/fitted to some values, either approach may become tractable for model fitting. It is also faster than regenerating Q matrices and performing CME simulations.
 
 # How QSTIMB works
+## Adapted Gillespie algorithm
+
 
 An excellent description of how CME (Q matrix-based simulations are achieved is found in "A Q matrix Cookbook" (https://link.springer.com/chapter/10.1007/978-1-4419-1229-9_20).
 
@@ -404,7 +406,7 @@ Then we get a state transition vector that describes the number of receptors lea
 
 Doing this for all states, k, we can obtain the distribution of receptors across states at the next time point.
 
-## Some nuance in population management
+## Nuanced population management
 A known problem with fixed interval (i.e. non-continuous time) Gillespie methods is that because random draws occur indepdently for each transition, we can end up with more transitions occurring than exist in state i.
 
 </br>
@@ -416,8 +418,8 @@ Usually, this cna be mititgated by performing several epochs and averaging state
 In QSTIMB, I redistribute any excess populations probabilistically to ensure that number of transitions is less thna or equal to state occupancy. Any remainder population is considered to soujoun. 
 
 </br>
-
-Fortunately, this approach was validated and allowed realistic current-variance profiles to be obtained.
+## Validated Methodology
+This approach was validated and allowed realistic current-variance profiles to be obtained, and was validated in comparison to prior study using alternative simulation approaches, in comparison to realistic mechanisms, and using varied concentrations. The recommended method (binomial draw, fixed interval size) was chosen over alternatives (weighted adaptive interval) separately, or in combination with poisson draws (rather than binomial), which were unsuitable for changing agonist concentrations over time.
 
 
 
