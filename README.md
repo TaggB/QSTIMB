@@ -1,14 +1,23 @@
 # QSTIMB
 # Q-matrix and Stochastic simulation-based Ion Channel Model Builder
+
+</br>  
+
 A Quick start guide is detailed below. An explanation of what is going on under the hood is detailed at the end.
+
+</br>  
+
 QSTIMB primarily serves to simulate ligand-gated ion channel-coupled receptors. This can be achieved via two main routes:
--1. A chemical master equation (CME) type approach, using the Q matrix method (Colquhoun and Hawkes) - via either relaxations in constant agonist cocnentrations, or during fast alternation between any two agonist concentrations (such as in piezo-driven fast application).
--2. A stochastic approach, which implements the Gillespie algorithm to allow either relaxations or fast alternation between any two agonist concentrations (such as in piezo-driven fast application). This approach is necessary because real currents show variance in their temporal characteristics even when the stimulus is identical.
+1. A chemical master equation (CME) type approach, using the Q matrix method (Colquhoun and Hawkes) - via either relaxations in constant agonist cocnentrations, or during fast alternation between any two agonist concentrations (such as in piezo-driven fast application).
+</br>  
+3. A stochastic approach, which implements the Gillespie algorithm to allow either relaxations or fast alternation between any two agonist concentrations (such as in piezo-driven fast application). This approach is necessary because real currents show variance in their temporal characteristics even when the stimulus is identical.
 
 </br>
 
 The additional purposes of the software are to serve functions for simulation routines (e.g. adding Gaussian noise, plotting models), and to be simple to use. QSTIMB is written using a functional programming framework for those unfamilair with Python. **For help with a function, type 'help(functionname)' to view its documentation.**. To this end, various example models are included, illustrting how to construct them. The adopted format for the model object is deliberately intuitive.
+
 </br>  
+
 **For a guide on how to use, scroll down.**
 
 </br>  
@@ -23,7 +32,9 @@ Several example model dictionaries are included to give an illustration of how t
 - [0] Unbound, closed state
 - [1] Bound, closed state
 - [2] open state
+
 </br>  
+
 such that the model scheme is:
    [0]--[1]--[2]
 
@@ -58,17 +69,19 @@ So first, run the line
 Q = threesQ(agonist_conc =5*(10**-3)
 '''
 tr is a k x k matrix, where k is the number of states in the model. 
+
 </br>  
     tr[i,j] contains the rate for a transition from state i to j per second and is stored as Q['rates']. This is used for stochastic simulations. Some of these rates        are concentration-dependent. As in Q, these rates are expressed as dimensionless constants (per second) - except where concentration-dependent rates, which are         expressed as per Mole per second
     
 </br>  
-
     The conc-dep key (accessed via Q['conc-dep']) tells us which rates are concentration-dependent (key = state i, value = state j). 
     
 </br>  
 
 Some states - the open states - are associated with a conductance. These are detailed in the keys of Q['conducting states'], where values are their associated conductance in S. Here both conducting states have the same conductance (50 pS). 
+
 </br>  
+
 If we access Q['conc'], we see that it is 5mM (or 5x10**-3M). This value is used for relaxations, and is used to scale to rates as appropriate during agonist applications.
 
 </br>  
