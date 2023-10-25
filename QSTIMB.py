@@ -745,7 +745,7 @@ def Gillespie_walk(Q,t_final):
 # =============================================================================
 # binomial trial-based Tau leaping
 # =============================================================================
-def Tau_leap_Gillespie(N,Q,t_final,interval = 5e-05,voltage=0,Vrev = 0,iterations = 1,plot=True):
+def Tau_leap_Gillespie(N,Q,t_final,interval = 5e-05,voltage=0,Vrev = 0,iterations = 100,plot=True):
     """
     Classical method for Gillespie fixed Tau (interval) leaping - please read all notes
     
@@ -1014,7 +1014,7 @@ def agonist_application_tau_leap_Gillespie(N,Q,t_final,agonist_time,agonist_dura
 
 #Can base on time for exhaustion of species as Cao, 2006...
 # including information we have about the rates
-def Weighted_adaptive_Tau_leap(N,Q,t_final,sampling = 5e-05,voltage=0,Vrev = 0,iterations = 1,plot=True):
+def Weighted_adaptive_Tau_leap(N,Q,t_final,sampling = 5e-05,voltage=0,Vrev = 0,iterations = 100,plot=True):
     """
     
     Performs a Gillespie walk with Tau leaping, where the step size (Tau) is
@@ -1150,7 +1150,7 @@ def Weighted_adaptive_Tau_leap(N,Q,t_final,sampling = 5e-05,voltage=0,Vrev = 0,i
     else:
         return(Tnew,p_t,occupancy)
     
-def Weighted_adaptive_agonist_application_Tau_leap(N,Q,t_final,agonist_time,agonist_duration,first_conc,second_conc,sampling = 5e-05,voltage=0,Vrev = 0,iterations = 1,plot=True,rise_time = 250*10**-6,decay_time = 300*10**-6):
+def Weighted_adaptive_agonist_application_Tau_leap(N,Q,t_final,agonist_time,agonist_duration,first_conc,second_conc,sampling = 5e-05,voltage=0,Vrev = 0,iterations = 100,plot=True,rise_time = 250*10**-6,decay_time = 300*10**-6):
     """
     Performs a Gillespie walk with Tau leaping for an agonist application
     , where the step size (Tau) is determined by the rates of each transition,
@@ -1356,7 +1356,9 @@ def Q_relax(Q,N,t_final,voltage= -60,interval= 5e-05,Vrev= 0,plot =True, just_pt
         
     #take initial states for N with probability given in Q['intial states']
     initial_states = [int(i) for i in Q['initial states'].keys()]
-    initial_probabilities = [int(i)*N for i in Q['initial states'].values()]
+    #initial_probabilities = [int(i)*N for i in Q['initial states'].values()]
+    # above changed to below changed to below
+    initial_probabilities = [i*N for i in Q['initial states'].values()]
     initial_occupancy = np.zeros(np.size(Q['rates'],axis=0))
     for item, value in enumerate(initial_states):
         initial_occupancy[value] = initial_probabilities[item]
@@ -1424,15 +1426,29 @@ def Q_agonist_application(Q,N,first_conc,second_conc,agonist_time,agonist_durati
     - voltage(mV): The voltage
     - Vrev(mV): The reversal potential of the channel 
     - plot: when True, displays plots
+    - sq_pulse. If true, overrides realistic cocnentration jumps to use a square pulse.
 
     """
     # get t by interval and discrete concentration by timestep
     t = np.arange(0,t_final,interval)
     jump_concs,jump_times = concentration_as_steps(first_conc=first_conc,second_conc=second_conc,dt=interval,start_time=agonist_time+(0.5*agonist_duration),duration = agonist_duration,rise_time=rise_time,decay_time=decay_time)
     
+    # currently deprecated
+    # if sq_pulse: # square pulse
+    #     concen_s = np.zeros(np.size(t))
+    #     concen_s[t<agonist_time]=first_conc
+    #     concen_s[(t>=agonist_time)&(t<=agonist_time+agonist_duration)]=second_conc
+    #     concen_s[t>agonist_time+agonist_duration] = first_conc
+    #     jump_concs = concen_s
+    
     #take initial states for N with probability given in Q['intial states']
+    # this won't work when probabilities are not wholen umbers. I.e.
+        # when resting state not occupied with probability 1.
     initial_states = [int(i) for i in Q['initial states'].keys()]
-    initial_probabilities = [int(i)*N for i in Q['initial states'].values()]
+    #initial_probabilities = [int(i)*N for i in Q['initial states'].values()]
+    # above changed to below
+    initial_probabilities = [i*N for i in Q['initial states'].values()]
+    
     initial_occupancy = np.zeros(np.size(Q['rates'],axis=0))
     for item, value in enumerate(initial_states):
         initial_occupancy[value] = initial_probabilities[item]
@@ -1967,7 +1983,7 @@ def resample_current(current_dataframe,target_frequency):
 # # Code for stability analysis using Monte Carlo Simulation
 # =============================================================================
 # =============================================================================
-import EpyPhys as epp
+import EPyPhys as epp
 from sklearn.metrics import r2_score
 import scipy.stats as sps
 def mechanistic_analysis(path,align=True):
@@ -2952,4 +2968,3 @@ def trapesium_t(current_dataframe):
         s[timestep] = np.trapz(x[:timestep],y[:timestep]) ### faster 
             
     return(s)
-
